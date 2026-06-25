@@ -1,0 +1,228 @@
+---
+title: "avance proyecto 6"
+author: "Eumir Rendon"
+date: "2026-06-23"
+output: html_document
+---
+
+```{r}
+# library(learnr)
+library(tidyverse)
+library(tidymodels)
+library(embed)
+library(corrr)
+library(tidytext)
+library(gradethis)
+library(sortable)
+library(learntidymodels)
+library(rstatix)
+library(broom)
+library(rgl)
+library(plotly)
+library(GGally)
+library(tidyr)
+library(FactoMineR)  
+library(factoextra)
+library(ggord)
+library(modeldata) 
+library(tsne)  
+library(uwot)  
+library(scattermore)  
+library(readr)  
+library(Rtsne)  
+library(gganimate)  
+library(data.table)  
+library(baguette)
+library(discrim)
+theme_set(theme_bw(16))
+
+tidymodels_prefer()
+
+df<-read.csv("C:/Users/eumir/Downloads/habits.csv")
+
+```
+Comenzaremos relizando un analisis de nuestra base de datos 
+
+```{r}
+df %>% dim()
+
+df %>% glimpse()
+
+df %>% head()
+
+df %>% head()
+
+colSums(is.na(df))
+
+df %>% summary()
+
+# No tenemos registros vacios
+# Gender, Part_time_job,diet_quality,parental_education_leveñ,internet_quality,extraccurricular_participation son categoricas
+```
+No tenemos registros vacios
+Variables categoricas: Gender, Part_time_job, diet_quality, parental_education_level, internet_quality, extraccurricular_participation
+
+A continuacion veremos que tan relacionadas estan las columnas 
+```{r}
+wdbc_corr <- df %>%
+  correlate(method = "spearman")
+
+wdbc_corr 
+
+cor_wdbc <- df %>%
+  select(where(is.numeric)) %>%
+  cor(method = "spearman")
+
+cor_wdbc
+
+ggcorrplot::ggcorrplot(corr = cor_wdbc,
+                       type = "lower", 
+                       show.diag = TRUE,
+                       lab = TRUE, 
+                       lab_size = 3)
+
+det(cor_wdbc)
+
+psych::KMO(cor_wdbc)
+
+psych::cortest.bartlett(cor_wdbc,nrow(df))
+```
+
+Tendremos que la variable que mas se correlaciona con una calificacion del examen alta son las horas de estudio por dia, esta puede servirnos como candidata a ser nuestra etiqueta si encontramos una separacion de grupos con nuestro aprendizaje no supervizado, otra alternativa es la salud mental
+
+Gracias a nuestro determinante alto podemos ver que no hay una multicolinealidad severa
+
+Otro dato importante es nuestro analisis KMO donde veremos que las variables comparten muy poca varianza en comun por lo que puede que PCA no sea un analisis satisfactorio ya que si analizamos no parecen provenir de factores latentes comunes.
+
+Sin embargo con nuestro analisis de bartlett tendremos que si existen correlaciones significativas en algunas variables, justamente las horas de estudio
+
+```{r}
+cor.df <- df %>% 
+  select(where(is.numeric)) %>%  cor_mat()
+cor.df
+
+options(scipen=999)
+
+cor.df %>% cor_get_pval()
+
+cor.df %>%
+  cor_reorder() %>%
+  pull_lower_triangle() %>%
+  cor_plot(label = TRUE)
+
+cor.df %>% cor_gather() %>% print(n=Inf)
+```
+Leyendo nuestros p-value podemos no solo afirmar de la gran correlacion entre las horas de estudio y la calificacion del examen, si no que ademas unicamente las correlaciones significativas son aquellas que se relacionan con la calificacion del examen y no entre el resto de las variables, exceptuando la edad, esta tampoco es una correlacion significativa respecto a la calificacion del examen
+
+
+Comenzaremos con nuestra reduccion PCA
+
+Comenzaremos por desprendernos de neustra variable objetivo que en este caso es la calificacion del examen, precisamente queremos saber si una reduccion de dimension puede explicar la calificacion
+
+```{r}
+wdbc_recipe <- recipe(~ ., data = df) %>%
+  step_dummy(all_nominal_predictors()) %>%
+  step_normalize(all_predictors()) %>%
+  step_pca(all_predictors(), id = "pca")
+
+wdbc_pca <- prep(wdbc_recipe)
+
+# pca_loading <- tidy(wdbc_pca, id="pca")
+# pca_loading
+
+# pca_variances <- tidy(wdbc_pca, id = "pca", type = "variance")
+# pca_variances
+
+pca_var_percent<- tidy(wdbc_pca, id = "pca", type = "variance")%>%
+                filter(str_detect(terms, "percent variance"))
+pca_var_percent
+
+pca_var_cum_percent<-tidy(wdbc_pca, id = "pca", type = "variance")%>%
+                filter(str_detect(terms, "cumulative percent variance"))
+pca_var_cum_percent
+
+wdbc_pca %>% 
+  tidy(id = "pca", type = "variance") %>% 
+  dplyr::filter(terms == "cumulative percent variance") %>% 
+  ggplot(aes(x = component, y = value)) + 
+  geom_col(fill = "#F25E52") + 
+  xlim(c(0, 22)) + 
+  geom_point(size=3) +
+  geom_line(color="darkblue", size=1.1)+
+  labs(x="PC", y="% acumulado de varianza", title="Scree plot")
+```
+
+Gracias a nuestro analisis podemos ver que en definitiva el metodo PCA no lograra reducir las dimensiones de forma eficiente, ya que de tomar 3 dimensiones no lograremos explicar siquiera el 25% de nuestra variabilidad, justamente siendo fundamentado con nuestras estadisticas anteriores
+
+Veremos una grafica para nuestros dos primeros componentes
+
+```{r}
+variance_exp <- tidy(wdbc_pca,id = "pca", type = "variance")%>%
+                filter(str_detect(terms, "percent variance"))
+variance_exp
+
+VE <- paste("Varianza explicada por dos componentes:"
+                       ,round(variance_exp$value[[1]]+variance_exp$value[[2]], digits = 2),"%")
+# VE
+
+# Estos son los valores de cada componente para cada fila
+datos_pca<-bake(wdbc_pca, new_data = NULL)
+datos_pca
+
+datos_pca %>%
+  ggplot(aes(x = PC1, y = PC2))+
+  geom_point()+
+  labs(x = paste0("PC1: ",round(variance_exp$value[[1]],2), "%"),
+       y = paste0("PC2: ",round(variance_exp$value[[2]],2), "%"))+
+  ggtitle(paste0("WDBC: Gráfica de componentes principales","\n",VE))
+```
+
+Como vemos precisamente no podemos encontrar grupos claros, aun asi trataremos de ver si nuestras suposiciones de la variable objetivo son ciertas, es decir que pueden ser declarados como una etiqueta, para ello dividiremos en 4 cuantiles las calificaciones del examen  
+
+```{r}
+datos_pca$exam_score <- df$exam_score
+
+datos_pca_quantile <- datos_pca %>%
+  mutate(exam_score = cut(
+    exam_score,
+    breaks = quantile(exam_score, probs = seq(0, 1, 0.25), na.rm = TRUE),
+    include.lowest = TRUE,
+    labels = c("Bajo", "Medio-Bajo", "Medio-Alto", "Alto")
+  ))
+
+datos_pca_quantile %>%
+  ggplot(aes(x = PC1, y = PC2,color = factor(exam_score)))+
+  geom_point()+
+  labs(x = paste0("PC1: ",round(variance_exp$value[[1]],2), "%"),
+       y = paste0("PC2: ",round(variance_exp$value[[2]],2), "%"))+
+  ggtitle(paste0("WDBC: Gráfica de componentes principales","\n",VE))
+```
+```{r}
+wdbc_pca %>%
+  tidy(id = "pca") %>%
+  filter(component %in% paste0("PC", 1:3)) %>%
+  mutate(component = fct_inorder(component)) %>%
+  ggplot(aes(value, terms, fill = terms)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~component, nrow = 1) +
+  labs(y = NULL)
+
+```
+
+```{r}
+plot3d( 
+  x=datos_pca_quantile$PC1, y=datos_pca_quantile$PC2, z=datos_pca_quantile$PC3, 
+  col = as.numeric(datos_pca_quantile$exam_score), 
+  type = 's', 
+  radius = .1,
+  xlab="PC1", ylab="PC2", zlab="PC3")
+
+g.df1 <- plot_ly(datos_pca_quantile, x = ~PC1, y = ~PC2, z = ~PC3, color = ~exam_score, colors =c("#0000FF", "#FF00FF") )
+g.df1 <- g.df1 %>% add_markers()
+g.df1 <- g.df1 %>% plotly::layout(scene = list(xaxis = list(title = 'PC1'),
+                     yaxis = list(title = 'PC2'),
+                     zaxis = list(title = 'PC3')))
+
+g.df1
+```
+
