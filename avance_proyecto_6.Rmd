@@ -1,0 +1,516 @@
+---
+title: "avance proyecto 6"
+author: "Eumir Rendon"
+date: "2026-06-23"
+output: html_document
+---
+
+```{r}
+# library(learnr)
+library(tidyverse)
+library(tidymodels)
+library(embed)
+library(corrr)
+library(tidytext)
+library(gradethis)
+library(sortable)
+library(learntidymodels)
+library(rstatix)
+library(broom)
+library(rgl)
+library(plotly)
+library(GGally)
+library(tidyr)
+library(FactoMineR)  
+library(factoextra)
+library(ggord)
+library(modeldata) 
+library(tsne)  
+library(uwot)  
+library(scattermore)  
+library(readr)  
+library(Rtsne)  
+library(gganimate)  
+library(data.table)  
+library(baguette)
+library(discrim)
+theme_set(theme_bw(16))
+
+tidymodels_prefer()
+
+df<-read.csv("C:/Users/eumir/Downloads/habits.csv")
+
+```
+Comenzaremos realizando un analisis de nuestra base de datos 
+
+```{r}
+df %>% dim()
+
+df %>% glimpse()
+
+df %>% head()
+
+df %>% head()
+
+colSums(is.na(df))
+
+df %>% summary()
+
+```
+No tenemos registros vacios
+Variables categoricas: Gender, Part_time_job, diet_quality, parental_education_level, internet_quality, extraccurricular_participation
+
+A continuacion veremos que tan relacionadas estan las columnas 
+```{r}
+wdbc_corr <- df %>%
+  correlate(method = "spearman")
+
+wdbc_corr 
+
+cor_wdbc <- df %>%
+  select(where(is.numeric)) %>%
+  cor(method = "spearman")
+
+cor_wdbc
+
+ggcorrplot::ggcorrplot(corr = cor_wdbc,
+                       type = "lower", 
+                       show.diag = TRUE,
+                       lab = TRUE, 
+                       lab_size = 3)
+
+det(cor_wdbc)
+
+psych::KMO(cor_wdbc)
+
+psych::cortest.bartlett(cor_wdbc,nrow(df))
+```
+
+Tendremos que la variable que mas se correlaciona con una calificacion del examen alta son las horas de estudio por dia, esta puede servirnos como candidata a ser nuestra etiqueta si encontramos una separacion de grupos con nuestro aprendizaje no supervizado, otra alternativa es la salud mental
+
+Gracias a nuestro determinante alto podemos ver que no hay una multicolinealidad severa
+
+Otro dato importante es nuestro analisis KMO donde veremos que las variables comparten muy poca varianza en comun por lo que puede que PCA no sea un analisis satisfactorio ya que si analizamos no parecen provenir de factores latentes comunes.
+
+Sin embargo con nuestro analisis de bartlett tendremos que si existen correlaciones significativas en algunas variables, justamente las horas de estudio
+
+```{r}
+cor.df <- df %>% 
+  select(where(is.numeric)) %>%  cor_mat()
+cor.df
+
+options(scipen=999)
+
+cor.df %>% cor_get_pval()
+
+cor.df %>%
+  cor_reorder() %>%
+  pull_lower_triangle() %>%
+  cor_plot(label = TRUE)
+
+cor.df %>% cor_gather() %>% print(n=Inf)
+```
+Leyendo nuestros p-value podemos no solo afirmar de la gran correlacion entre las horas de estudio y la calificacion del examen, si no que ademas unicamente las correlaciones significativas son aquellas que se relacionan con la calificacion del examen y no entre el resto de las variables, exceptuando la edad, esta tampoco es una correlacion significativa respecto a la calificacion del examen
+
+
+Comenzaremos con nuestra reduccion PCA
+
+Comenzaremos por desprendernos de nuestra variable objetivo que en este caso es la calificacion del examen, precisamente queremos saber si una reduccion de dimension puede explicar la calificacion
+
+```{r}
+wdbc_recipe <- recipe(~ ., data = df) %>%
+  step_dummy(all_nominal_predictors()) %>%
+  step_normalize(all_predictors()) %>%
+  step_pca(all_predictors(), id = "pca")
+
+wdbc_pca <- prep(wdbc_recipe)
+
+# pca_loading <- tidy(wdbc_pca, id="pca")
+# pca_loading
+
+# pca_variances <- tidy(wdbc_pca, id = "pca", type = "variance")
+# pca_variances
+
+pca_var_percent<- tidy(wdbc_pca, id = "pca", type = "variance")%>%
+                filter(str_detect(terms, "percent variance"))
+pca_var_percent
+
+pca_var_cum_percent<-tidy(wdbc_pca, id = "pca", type = "variance")%>%
+                filter(str_detect(terms, "cumulative percent variance"))
+pca_var_cum_percent
+
+wdbc_pca %>% 
+  tidy(id = "pca", type = "variance") %>% 
+  dplyr::filter(terms == "cumulative percent variance") %>% 
+  ggplot(aes(x = component, y = value)) + 
+  geom_col(fill = "#F25E52") + 
+  xlim(c(0, 22)) + 
+  geom_point(size=3) +
+  geom_line(color="darkblue", size=1.1)+
+  labs(x="PC", y="% acumulado de varianza", title="Scree plot")
+```
+
+Gracias a nuestro analisis podemos ver que en definitiva el metodo PCA no lograra reducir las dimensiones de forma eficiente, ya que de tomar 3 dimensiones apenas lograremos explicar el 25% de nuestra variabilidad, justamente siendo fundamentado con nuestras estadisticas anteriores
+
+Veremos una grafica para nuestros dos primeros componentes
+
+```{r}
+variance_exp <- tidy(wdbc_pca,id = "pca", type = "variance")%>%
+                filter(str_detect(terms, "percent variance"))
+variance_exp
+
+VE <- paste("Varianza explicada por dos componentes:"
+                       ,round(variance_exp$value[[1]]+variance_exp$value[[2]], digits = 2),"%")
+# VE
+
+# Estos son los valores de cada componente para cada fila
+datos_pca<-bake(wdbc_pca, new_data = NULL)
+datos_pca
+
+datos_pca %>%
+  ggplot(aes(x = PC1, y = PC2))+
+  geom_point()+
+  labs(x = paste0("PC1: ",round(variance_exp$value[[1]],2), "%"),
+       y = paste0("PC2: ",round(variance_exp$value[[2]],2), "%"))+
+  ggtitle(paste0("WDBC: Gráfica de componentes principales","\n",VE))
+```
+
+Como vemos precisamente no podemos encontrar grupos claros, aun asi trataremos de ver si nuestras suposiciones de la variable calificadora son ciertas, es decir que pueden ser declarados como una etiqueta, para ello dividiremos en 4 cuantiles las calificaciones del examen  
+
+```{r}
+datos_pca$exam_score <- df$exam_score
+
+datos_pca_quantile <- datos_pca %>%
+  mutate(exam_score = cut(
+    exam_score,
+    breaks = quantile(exam_score, probs = seq(0, 1, 0.25), na.rm = TRUE),
+    include.lowest = TRUE,
+    labels = c("Bajo", "Medio-Bajo", "Medio-Alto", "Alto")
+  ))
+
+datos_pca_quantile %>%
+  ggplot(aes(x = PC1, y = PC2,color = factor(exam_score)))+
+  geom_point()+
+  labs(x = paste0("PC1: ",round(variance_exp$value[[1]],2), "%"),
+       y = paste0("PC2: ",round(variance_exp$value[[2]],2), "%"))+
+  ggtitle(paste0("WDBC: Gráfica de componentes principales","\n",VE))
+```
+Como podemos ver los datos son dispersos y pese a todo podemos ver cierta distribucion de nuestros datos gracias a nuestra reduccion de variable
+
+```{r}
+wdbc_pca %>%
+  tidy(id = "pca") %>%
+  filter(component %in% paste0("PC", 1:3)) %>%
+  mutate(component = fct_inorder(component)) %>%
+  ggplot(aes(value, terms, fill = terms)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~component, nrow = 1) +
+  labs(y = NULL)
+
+```
+Veremos que precisamente nuestro primer componente toma importancia en las horas de estudio y el resultado del examen, seguidos por factores como la calidad de internet y la calidad de la dieta
+
+```{r}
+plot3d( 
+  x=datos_pca_quantile$PC1, y=datos_pca_quantile$PC2, z=datos_pca_quantile$PC3, 
+  col = as.numeric(datos_pca_quantile$exam_score), 
+  type = 's', 
+  radius = .1,
+  xlab="PC1", ylab="PC2", zlab="PC3")
+
+g.df1 <- plot_ly(datos_pca_quantile, x = ~PC1, y = ~PC2, z = ~PC3, color = ~exam_score, colors =c("#0000FF", "#FF00FF") )
+g.df1 <- g.df1 %>% add_markers()
+g.df1 <- g.df1 %>% plotly::layout(scene = list(xaxis = list(title = 'PC1'),
+                     yaxis = list(title = 'PC2'),
+                     zaxis = list(title = 'PC3')))
+
+g.df1
+```
+Para el caso de 3 dimensiones no nos muestra un cambio significativo, sin embargo nuestra separacion por grupos sigue estando presente
+
+Ahora pasaremos al metodo t-sne
+
+Modelareos primero sin ningun hiper-parametro
+
+```{r}
+set.seed(123)
+
+start.time <- proc.time()
+
+df_tsne <- df %>%
+  dplyr::select(where(is.numeric)) %>%
+  scale() %>%
+  tsne()
+
+proc.time()-start.time
+```
+
+```{r}
+datos_tsne<-data.frame(tSNE1=df_tsne[,1],tSNE2=df_tsne[,2],exam_score=df$exam_score)
+
+datos_tsne_quantile <- datos_tsne %>%
+  mutate(exam_score = cut(
+    exam_score,
+    breaks = quantile(exam_score, probs = seq(0, 1, 0.25), na.rm = TRUE),
+    include.lowest = TRUE,
+    labels = c("Bajo", "Medio-Bajo", "Medio-Alto", "Alto")
+  ))
+
+```
+Sin algun distintivo veremos que no existen grupos definidos cuando no declaramos hiperparametros
+```{r}
+ggplot(datos_tsne,aes(x=tSNE1,y=tSNE2))+
+geom_point(size=1.1,color="darkblue")+
+labs(title="WDBC: t-sne")
+```
+```{r}
+ggplot(datos_tsne_quantile,aes(x=tSNE1,y=tSNE2,color=exam_score))+
+geom_point(size=1.1)+
+labs(title="WDBC: t-sne")
+```
+En este caso tsne no muestra una separacion tan evidente como en el caso de pca, aunque si se puede notar un degradado, debemos recordar que aun no establecemos ningun hiperparametro
+
+```{r}
+ggplot(datos_tsne_quantile,
+       aes(x = exam_score, y = tSNE1)) +
+  geom_boxplot(fill="darkblue")
+
+ggplot(datos_tsne_quantile,
+       aes(x = exam_score, y = tSNE2)) +
+  geom_boxplot(fill="darkblue")
+
+
+```
+Veremos que existen ligeros traslapes entre el como tsne hace una diferencia en los grupos, aunque se puede notar que es sigificativa, puede indicar que puede ser mejor que pca
+
+
+```{r}
+colors <- c(
+  "#E41A1C",
+  "#377EB8",
+  "#4DAF4A",
+  "#984EA3"
+)
+
+ggplot(datos_tsne_quantile, aes(x=tSNE1,y=tSNE2, color = factor(exam_score))) +
+  geom_point(size = 1.5) +
+  scale_color_manual(values = colors) +
+  labs(
+    title = "t-SNE: WDBC",
+    x = "t-SNE Dimension 1",
+    y = "t-SNE Dimension 2"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 20)
+  )
+```
+
+Esta grafica muestra de forma un poco mas clara nuestra separacion entre grupos sin allterar demasiado las dimensiones del grafico
+
+Debemos recordar que este algoritmo uso la primera version de tsne ahora pasaremos a demostrar el poderio de la libreria de rtsne
+
+```{r}
+set.seed(123)
+
+start.time <- proc.time()
+
+df_Rtsne <- df %>%
+  dplyr::select(where(is.numeric)) %>%
+  scale() %>%
+  Rtsne() 
+
+proc.time()-start.time
+```
+
+```{r}
+datos_Rtsne<-data.frame(Rtsne1=df_Rtsne$Y[,1],Rtsne2=df_Rtsne$Y[,2],exam_score=df$exam_score)
+
+datos_Rtsne_quantile <- datos_Rtsne %>%
+  mutate(exam_score = cut(
+    exam_score,
+    breaks = quantile(exam_score, probs = seq(0, 1, 0.25), na.rm = TRUE),
+    include.lowest = TRUE,
+    labels = c("Bajo", "Medio-Bajo", "Medio-Alto", "Alto")
+  ))
+
+```
+
+```{r}
+ggplot(datos_Rtsne_quantile,aes(x=Rtsne1,y=Rtsne2))+
+geom_point(size=1.1,color="darkred")+
+labs(title="WDBC: Rtsne")
+```
+
+```{r}
+ggplot(datos_Rtsne_quantile,aes(x=Rtsne1,y=Rtsne2,color=exam_score))+
+geom_point(size=1.1)+
+labs(title="WDBC: Rtsne")
+```
+
+Veremos que gracias a esta libreria la dispersion entre nuestros grupos y los datos en general es mejor, demostrando un mejor uso de la reduccion de dimension para explicar la varianza de nuestros datos
+
+```{r}
+ggplot(datos_Rtsne_quantile,
+       aes(x = exam_score, y = Rtsne1)) +
+  geom_boxplot(fill="darkblue")
+
+ggplot(datos_Rtsne_quantile,
+       aes(x = exam_score, y = Rtsne2)) +
+  geom_boxplot(fill="darkblue")
+```
+
+En este caso nuestro algoritmo nos da un traslape entre nuestros grupos ligeramente menos eficientes para los grupos intermedios, aunque para los extremos sigue siendo eficiente para los grupos de los extremos
+
+```{r}
+colors <- c(
+  "#E41A1C",
+  "#377EB8",
+  "#4DAF4A",
+  "#984EA3"
+)
+
+ggplot(datos_Rtsne_quantile, aes(x=Rtsne1,y=Rtsne2, color = factor(exam_score))) +
+  geom_point(size = 1.5) +
+  scale_color_manual(values = colors) +
+  labs(
+    title = "t-SNE: WDBC",
+    x = "t-SNE Dimension 1",
+    y = "t-SNE Dimension 2"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 20)
+  )
+```
+Esta grafica es un poco mas visible
+
+Ahora mostraremos los resultados de Tsne para 3 dimensiones
+
+```{r}
+set.seed(123)
+
+start.time <- proc.time()
+
+df_tsne_3d <- df %>%
+  dplyr::select(where(is.numeric)) %>%
+  scale() %>%
+  tsne(k=3)
+
+proc.time()-start.time
+```
+
+```{r}
+datos_tsne_3d<-data.frame(tSNE1=df_tsne_3d[,1],tSNE2=df_tsne_3d[,2],tSNE3=df_tsne_3d[,3],exam_score=df$exam_score)
+
+datos_tsne_3d_quantile <- datos_tsne_3d %>%
+  mutate(exam_score = cut(
+    exam_score,
+    breaks = quantile(exam_score, probs = seq(0, 1, 0.25), na.rm = TRUE),
+    include.lowest = TRUE,
+    labels = c("Bajo", "Medio-Bajo", "Medio-Alto", "Alto")
+  ))
+
+colors <- c(
+  "#E41A1C",
+  "#377EB8",
+  "#4DAF4A",
+  "#984EA3"
+)
+hover_text <- paste(
+  "diagnostico:", datos_tsne_3d_quantile$exam_score, "",
+  "Dimension 1:", round(datos_tsne_3d_quantile$tSNE1, 3),
+  "Dimension 2:", round(datos_tsne_3d_quantile$tSNE2, 3),
+  "Dimension 3:", round(datos_tsne_3d_quantile$tSNE3, 3)
+)
+
+plot_ly(
+  data = datos_tsne_3d_quantile,
+  x = ~tSNE1,
+  y = ~tSNE2,
+  z = ~tSNE3,
+  type = "scatter3d",
+  mode = "markers",
+  marker = list(size = 6),
+  text = hover_text,
+  hoverinfo = "text",
+  color = ~exam_score,
+  colors = colors
+) %>%
+  plotly::layout(
+    title = "t-SNE_3D:WDBC ",
+    scene = list(
+      xaxis = list(title = "t-SNE Dimension 1"),
+      yaxis = list(title = "t-SNE Dimension 2"),
+      zaxis = list(title = "t-SNE Dimension 3")
+    )
+  )
+```
+
+Con nuestra primer libreria vemos que no hay mucho progreso los datos se ven muy dispersos como para realizar un analisis satisfactorio, ahora veremos como actua nuestra libreria mas eficiente
+
+```{r}
+set.seed(123)
+
+start.time <- proc.time()
+
+df_Rtsne_3d <- df %>%
+  dplyr::select(where(is.numeric)) %>%
+  scale() %>%
+  Rtsne(dims=3)
+
+
+proc.time()-start.time
+```
+
+```{r}
+datos_Rtsne_3d<-data.frame(tSNE1=df_Rtsne_3d$Y[,1],tSNE2=df_Rtsne_3d$Y[,2],tSNE3=df_Rtsne_3d$Y[,3],exam_score=df$exam_score)
+
+datos_Rtsne_3d_quantile <- datos_Rtsne_3d %>%
+  mutate(exam_score = cut(
+    exam_score,
+    breaks = quantile(exam_score, probs = seq(0, 1, 0.25), na.rm = TRUE),
+    include.lowest = TRUE,
+    labels = c("Bajo", "Medio-Bajo", "Medio-Alto", "Alto")
+  ))
+
+colors <- c(
+  "#E41A1C",
+  "#377EB8",
+  "#4DAF4A",
+  "#984EA3"
+)
+hover_text <- paste(
+  "diagnostico:", datos_Rtsne_3d_quantile$exam_score, "",
+  "Dimension 1:", round(datos_Rtsne_3d_quantile$tSNE1, 3),
+  "Dimension 2:", round(datos_Rtsne_3d_quantile$tSNE2, 3),
+  "Dimension 3:", round(datos_Rtsne_3d_quantile$tSNE3, 3)
+)
+
+plot_ly(
+  data = datos_Rtsne_3d_quantile,
+  x = ~tSNE1,
+  y = ~tSNE2,
+  z = ~tSNE3,
+  type = "scatter3d",
+  mode = "markers",
+  marker = list(size = 6),
+  text = hover_text,
+  hoverinfo = "text",
+  color = ~exam_score,
+  colors = colors
+) %>%
+  plotly::layout(
+    title = "t-SNE_3D:WDBC ",
+    scene = list(
+      xaxis = list(title = "t-SNE Dimension 1"),
+      yaxis = list(title = "t-SNE Dimension 2"),
+      zaxis = list(title = "t-SNE Dimension 3")
+    )
+  )
+```
+Los extremos de nuestros cuantiles estan bien separados, aunque para los cuantiles intermedios se encuentran agrupados entre si
+
+```{r}
+
+```
