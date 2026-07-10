@@ -1,0 +1,352 @@
+---
+title: "Reducción de dimensión: PC - Proyecto modulo 6"
+author: "Eumir Rendon, Raúl Llamosas, etc"
+date: "2026-06-23"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r}
+# library(learnr)
+library(tidyverse)
+library(tidymodels)
+library(embed)
+library(corrr)
+library(tidytext)
+library(gradethis)
+library(sortable)
+library(learntidymodels)
+library(rstatix)
+library(broom)
+library(rgl)
+library(plotly)
+library(GGally)
+library(tidyr)
+library(FactoMineR)  
+library(factoextra)
+library(ggord)
+library(modeldata) 
+library(tsne)  
+library(uwot)  
+library(scattermore)  
+library(readr)  
+library(Rtsne)  
+library(gganimate)  
+library(data.table)  
+library(baguette)
+library(discrim)
+theme_set(theme_bw(16))
+
+tidymodels_prefer()
+
+df<-read.csv("/home/yamorza/Documentos/espacio_trabajo_intro_analisis_dat2/proyecto_modulo_6/src/habits.csv")
+
+```
+
+
+Comenzaremos con nuestra reduccion PCA
+
+Vamos a estandarizar nuestras variables y lidiar con las variables categóricas mencionadas en el paso anterior por medio de dummies.
+
+```{r}
+df_pca <- df %>%
+  select(-exam_score)
+
+receta_pca <- recipe(~ ., data = df_pca) %>%
+  step_dummy(all_nominal_predictors()) %>%
+  step_normalize(all_predictors())
+
+datos_preparados <- prep(receta_pca) %>%
+  bake(new_data = NULL)
+
+datos_finales <- datos_preparados %>%
+  bind_cols(exam_score = df$exam_score)
+
+print("Datos preparados para PCA:")
+print(head(datos_finales))
+
+print("\nEstructura de los datos:")
+str(datos_finales)
+
+print("\nResumen estadístico:")
+summary(datos_finales)
+
+print("\nNombres de las columnas:")
+names(datos_finales)
+```
+```{r}
+pca_modelo <- prcomp(datos_preparados, center = FALSE, scale. = FALSE)
+
+varianza_explicada <- summary(pca_modelo)$importance
+
+print("Varianza explicada por cada componente:")
+print(varianza_explicada)
+
+print("\nProporción de varianza acumulada:")
+print(varianza_explicada[3, 1:10])
+
+num_componentes <- length(pca_modelo$sdev)
+
+scree_data <- data.frame(
+  Componente = 1:num_componentes,
+  Varianza = pca_modelo$sdev^2 / sum(pca_modelo$sdev^2) * 100,
+  Varianza_Acumulada = cumsum(pca_modelo$sdev^2 / sum(pca_modelo$sdev^2)) * 100
+)
+
+ggplot(scree_data, aes(x = Componente)) +
+  geom_col(aes(y = Varianza_Acumulada), fill = "#2E8B57", alpha = 0.7) +
+  geom_line(aes(y = Varianza_Acumulada), color = "#FFD700", size = 1.5) +
+  geom_point(aes(y = Varianza_Acumulada), color = "#FFD700", size = 3) +
+  geom_hline(yintercept = 80, linetype = "dashed", color = "#DC143C", alpha = 0.6, size = 1) +
+  geom_hline(yintercept = 90, linetype = "dashed", color = "#DC143C", alpha = 0.3, size = 1) +
+  annotate("text", x = num_componentes - 2, y = 82, label = "80%", color = "#DC143C", size = 4) +
+  annotate("text", x = num_componentes - 2, y = 92, label = "90%", color = "#DC143C", size = 4) +
+  labs(x = "Componente Principal",
+       y = "Porcentaje de Varianza Acumulada",
+       title = "Scree Plot - Varianza Acumulada",
+       subtitle = "Barras y línea muestran la varianza acumulada") +
+  theme_minimal() +
+  theme(plot.title = element_text(color = "#2E8B57", face = "bold", size = 14),
+        plot.subtitle = element_text(color = "#4682B4", size = 10))
+
+ggplot(scree_data[1:10, ], aes(x = Componente)) +
+  geom_col(aes(y = Varianza), fill = "#2E8B57", alpha = 0.7) +
+  geom_line(aes(y = Varianza_Acumulada), color = "#FFD700", size = 1.2) +
+  geom_point(aes(y = Varianza_Acumulada), color = "#FFD700", size = 2.5) +
+  labs(x = "Componente Principal",
+       y = "Porcentaje de Varianza",
+       title = "Scree Plot - Varianza Individual y Acumulada (primeros 10 componentes)",
+       subtitle = "Barras: varianza individual | Línea: varianza acumulada") +
+  theme_minimal() +
+  theme(plot.title = element_text(color = "#2E8B57", face = "bold", size = 14),
+        plot.subtitle = element_text(color = "#4682B4", size = 10))
+
+
+```
+Notamos que necesitamos muchas componentes para explicar varianza.
+¿Qué pasa si eliminamos las variables categóricas? Como vimos en el análisis exploratorio de datos, no tienen mucha correlación con exam score. Reducir el número de columnas definitvamente nos ayudaría en simplificar el modelo.
+
+```{r}
+df_sin_categoricas <- df %>%
+  select(study_hours_per_day, mental_health_rating, exercise_frequency,
+         sleep_hours, attendance_percentage, netflix_hours, social_media_hours,exam_score) 
+```
+
+```{r}
+df_pca <- df_sin_categoricas %>%
+  select(-exam_score)
+
+receta_pca <- recipe(~ ., data = df_pca) %>%
+  step_dummy(all_nominal_predictors()) %>%
+  step_normalize(all_predictors())
+
+datos_preparados <- prep(receta_pca) %>%
+  bake(new_data = NULL)
+
+datos_finales <- datos_preparados %>%
+  bind_cols(exam_score = df$exam_score)
+
+print("Datos preparados para PCA:")
+print(head(datos_finales))
+
+print("\nEstructura de los datos:")
+str(datos_finales)
+
+print("\nResumen estadístico:")
+summary(datos_finales)
+
+print("\nNombres de las columnas:")
+names(datos_finales)
+```
+
+
+
+
+```{r}
+pca_modelo <- prcomp(datos_preparados, center = FALSE, scale. = FALSE)
+
+varianza_explicada <- summary(pca_modelo)$importance
+
+print("Varianza explicada por cada componente:")
+print(varianza_explicada)
+
+print("\nProporción de varianza acumulada:")
+print(varianza_explicada)
+
+num_componentes <- length(pca_modelo$sdev)
+
+scree_data <- data.frame(
+  Componente = 1:num_componentes,
+  Varianza = pca_modelo$sdev^2 / sum(pca_modelo$sdev^2) * 100,
+  Varianza_Acumulada = cumsum(pca_modelo$sdev^2 / sum(pca_modelo$sdev^2)) * 100
+)
+
+ggplot(scree_data, aes(x = Componente)) +
+  geom_col(aes(y = Varianza_Acumulada), fill = "#2E8B57", alpha = 0.7) +
+  geom_line(aes(y = Varianza_Acumulada), color = "#FFD700", size = 1.5) +
+  geom_point(aes(y = Varianza_Acumulada), color = "#FFD700", size = 3) +
+  geom_hline(yintercept = 80, linetype = "dashed", color = "#DC143C", alpha = 0.6, size = 1) +
+  geom_hline(yintercept = 90, linetype = "dashed", color = "#DC143C", alpha = 0.3, size = 1) +
+  annotate("text", x = num_componentes - 2, y = 82, label = "80%", color = "#DC143C", size = 4) +
+  annotate("text", x = num_componentes - 2, y = 92, label = "90%", color = "#DC143C", size = 4) +
+  labs(x = "Componente Principal",
+       y = "Porcentaje de Varianza Acumulada",
+       title = "Scree Plot - Varianza Acumulada",
+       subtitle = "Barras y línea muestran la varianza acumulada") +
+  theme_minimal() +
+  theme(plot.title = element_text(color = "#2E8B57", face = "bold", size = 14),
+        plot.subtitle = element_text(color = "#4682B4", size = 10))
+
+ggplot(scree_data[1:10, ], aes(x = Componente)) +
+  geom_col(aes(y = Varianza), fill = "#2E8B57", alpha = 0.7) +
+  geom_line(aes(y = Varianza_Acumulada), color = "#FFD700", size = 1.2) +
+  geom_point(aes(y = Varianza_Acumulada), color = "#FFD700", size = 2.5) +
+  labs(x = "Componente Principal",
+       y = "Porcentaje de Varianza",
+       title = "Scree Plot - Varianza Individual y Acumulada (primeros 10 componentes)",
+       subtitle = "Barras: varianza individual | Línea: varianza acumulada") +
+  theme_minimal() +
+  theme(plot.title = element_text(color = "#2E8B57", face = "bold", size = 14),
+        plot.subtitle = element_text(color = "#4682B4", size = 10))
+
+
+
+```
+Como podemos ver, solo necesitamos 5 componentes para explicar una varianza cercana a 80%. Esto es una clara mejoría con respecto de mantener todas las columnas.
+
+```{r}
+scores_pca <- as.data.frame(pca_modelo$x)
+
+scores_pca <- scores_pca %>%
+  bind_cols(exam_score = df$exam_score)
+
+ggplot(scores_pca, aes(x = PC1, y = PC2, color = exam_score)) +
+  geom_point(size = 2.5, alpha = 0.7) +
+  scale_color_gradient2(
+    low = "#DC143C",
+    mid = "#FFD700",
+    high = "#2E8B57",
+    midpoint = 70,
+    name = "Calificación"
+  ) +
+  labs(x = paste0("PC1: ", round(varianza_explicada[2, 1] * 100, 2), "%"),
+       y = paste0("PC2: ", round(varianza_explicada[2, 2] * 100, 2), "%"),
+       title = "Componentes Principales - Estudiantes por Calificación") +
+  theme_minimal() +
+  theme(plot.title = element_text(color = "#2E8B57", face = "bold", size = 14))
+
+```
+Notamos que los que se acercan al rojo están en la esquina superior izquierda , los más verdes parecen concentrarse en la esquina inferior derecha Y en medio tienes a calificaciones entre 60 y 80.
+Vamos a colorear de otra forma para que quede ilustrado de una mejor manera.
+
+```{r}
+scores_pca <- as.data.frame(pca_modelo$x)
+scores_pca <- scores_pca %>%
+  bind_cols(exam_score = df$exam_score) %>%
+  mutate(exam_score_cuantil = cut(exam_score,
+                                   breaks = quantile(exam_score, probs = seq(0, 1, 1/3)),
+                                   include.lowest = TRUE,
+                                   labels = c("Bajo", "Medio", "Alto")))
+
+ggplot(scores_pca, aes(x = PC1, y = PC2, color = exam_score_cuantil)) +
+  geom_point(size = 2.5, alpha = 0.7) +
+  scale_color_manual(
+    values = c("#DC143C", "#FFD700", "#2E8B57"),
+    name = "Cuantil de Calificación"
+  ) +
+  labs(x = paste0("PC1: ", round(varianza_explicada[2, 1] * 100, 2), "%"),
+       y = paste0("PC2: ", round(varianza_explicada[2, 2] * 100, 2), "%"),
+       title = "Componentes Principales - Estudiantes por Cuantil de Calificación") +
+  theme_minimal() +
+  theme(plot.title = element_text(color = "#2E8B57", face = "bold", size = 14))
+```
+Si bien, ayuda a visualizar que los estudiantes se agrupan por color (calificación baja arriba, alta abajo, etc) no se agrupan de una manera suficientemente tajante a comparación de los ejemplos que vimos en clase.
+Veamos la correlación entre las componentes y el resultado de examen.
+
+```{r}
+
+correlaciones_pca <- scores_pca %>%
+  summarise(
+    PC1 = cor(PC1, exam_score),
+    PC2 = cor(PC2, exam_score),
+    PC3 = cor(PC3, exam_score),
+    PC4 = cor(PC4, exam_score),
+    PC5 = cor(PC5, exam_score)
+  ) %>%
+  pivot_longer(everything(), names_to = "Componente", values_to = "Correlación")
+
+print("Correlación entre componentes y calificación:")
+print(correlaciones_pca)
+
+ggplot(correlaciones_pca, aes(x = Componente, y = Correlación, fill = Componente)) +
+  geom_col() +
+  scale_fill_manual(values = c("#2E8B57", "#FFD700", "#4682B4", "#FF8C00", "#8B4513")) +
+  labs(title = "Correlación entre Componentes Principales y Calificación",
+       y = "Coeficiente de Correlación") +
+  theme_minimal() +
+  theme(plot.title = element_text(color = "#2E8B57", face = "bold", size = 12),
+        legend.position = "none")
+```
+Y ahora las cargas de las componentes.
+
+```{r}
+cargas <- as.data.frame(pca_modelo$rotation)
+
+cargas_importantes <- cargas %>%
+  select(PC1, PC2, PC3) %>%
+  rownames_to_column("Variable") %>%
+  pivot_longer(cols = c(PC1, PC2, PC3), names_to = "Componente", values_to = "Carga")
+
+ggplot(cargas_importantes, aes(x = Componente, y = Variable, fill = Carga)) +
+  geom_tile() +
+  scale_fill_gradient2(
+    low = "#DC143C",
+    mid = "#FFFFFF",
+    high = "#2E8B57",
+    midpoint = 0,
+    name = "Carga"
+  ) +
+  labs(title = "Mapa de Calor - Contribución de Variables a Componentes") +
+  theme_minimal() +
+  theme(plot.title = element_text(color = "#2E8B57", face = "bold", size = 12),
+        axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+
+
+```{r}
+
+
+
+cargas_top <- cargas_importantes %>%
+  group_by(Componente) %>%
+  slice_max(abs(Carga), n = 5) %>%
+  ungroup()
+
+print("Variables con mayor contribución a cada componente:")
+print(cargas_top)
+
+ggplot(cargas_top, aes(x = reorder(Variable, Carga), y = Carga, fill = Componente)) +
+  geom_col() +
+  facet_wrap(~Componente, scales = "free") +
+  coord_flip() +
+  scale_fill_manual(values = c("#2E8B57", "#FFD700", "#4682B4")) +
+  labs(x = "Variable",
+       y = "Carga",
+       title = "Top 5 Variables que Contribuyen a Cada Componente") +
+  theme_minimal() +
+  theme(plot.title = element_text(color = "#2E8B57", face = "bold", size = 12),
+        legend.position = "none")
+
+print(paste("Número total de componentes:", num_componentes))
+print(paste("Varianza total explicada por 2 componentes:", 
+            round(sum(varianza_explicada[2, 1:2]) * 100, 2), "%"))
+print(paste("Varianza total explicada por 5 componentes:", 
+            round(sum(varianza_explicada[2, 1:5]) * 100, 2), "%"))
+print(paste("Varianza total explicada por 5 componentes:", 
+            round(sum(varianza_explicada[2, 1:5]) * 100, 2), "%"))
+print(paste("Mejor correlación con calificación:", 
+            round(max(abs(correlaciones_pca$Correlación)), 3)))
+```
+En conclusión, fue una buena idea eliminar las categóricas pues ayudó a explicar mejor la varianza. No obstante, no fue suficiente para agrupar de manera satisfactoria.

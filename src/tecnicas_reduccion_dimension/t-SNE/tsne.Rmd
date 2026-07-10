@@ -1,0 +1,706 @@
+---
+title: "Reducción de dimensión: PC - Proyecto modulo 6"
+author: "Eumir Rendon, Raúl Llamosas, etc"
+date: "2026-06-23"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+
+
+Ahora pasaremos al metodo t-sne
+
+Modelareos primero sin ningun hiper-parametro
+
+
+```{r}
+# library(learnr)
+library(tidyverse)
+library(tidymodels)
+library(embed)
+library(corrr)
+library(tidytext)
+library(gradethis)
+library(sortable)
+library(learntidymodels)
+library(rstatix)
+library(broom)
+library(rgl)
+library(plotly)
+library(GGally)
+library(tidyr)
+library(FactoMineR)  
+library(factoextra)
+library(ggord)
+library(modeldata) 
+library(tsne)  
+library(uwot)  
+library(scattermore)  
+library(readr)  
+library(Rtsne)  
+library(gganimate)  
+library(data.table)  
+library(baguette)
+library(discrim)
+theme_set(theme_bw(16))
+
+tidymodels_prefer()
+df<-read.csv("/home/yamorza/Documentos/espacio_trabajo_intro_analisis_dat2/proyecto_modulo_6/src/habits.csv")
+
+```
+
+```{r}
+df_sin_categoricas <- df %>%
+  select(study_hours_per_day, mental_health_rating, exercise_frequency,
+         sleep_hours, attendance_percentage, netflix_hours, social_media_hours) 
+```
+
+```{r}
+set.seed(123)
+
+start.time <- proc.time()
+
+df_tsne <- df_sin_categoricas %>%
+  scale() %>%
+  tsne()
+
+proc.time()-start.time
+```
+
+```{r}
+datos_tsne <- data.frame(
+  tSNE1 = df_tsne[,1],
+  tSNE2 = df_tsne[,2],
+  exam_score = df$exam_score  
+)
+
+datos_tsne_quantile <- datos_tsne %>%
+  mutate(exam_score_cuantil = cut(
+    exam_score,
+    breaks = quantile(exam_score, probs = seq(0, 1, 0.25), na.rm = TRUE),
+    include.lowest = TRUE,
+    labels = c("Bajo", "Medio-Bajo", "Medio-Alto", "Alto")
+  ))
+
+```
+Sin algun distintivo veremos que no existen grupos definidos cuando no declaramos hiperparametros
+```{r}
+ggplot(datos_tsne, aes(x = tSNE1, y = tSNE2)) +
+  geom_point(size = 1.8, alpha = 0.7, color = "#2E8B57") +
+  labs(title = "t-SNE - Estudiantes por Hábitos") +
+  theme_minimal() +
+  theme(plot.title = element_text(color = "#2E8B57", face = "bold", size = 14),
+        axis.title = element_text(color = "#4682B4", size = 11),
+        axis.text = element_text(color = "#8B4513", size = 9))
+```
+
+
+```{r}
+ggplot(datos_tsne_quantile, aes(x = tSNE1, y = tSNE2, color = exam_score)) +
+  geom_point(size = 1.8, alpha = 0.7) +
+  scale_color_gradient2(
+    low = "#DC143C",
+    mid = "#FFD700",
+    high = "#2E8B57",
+    midpoint = 70,
+    name = "Calificación"
+  ) +
+  labs(title = "t-SNE - Estudiantes por Calificación Continua") +
+  theme_minimal() +
+  theme(plot.title = element_text(color = "#2E8B57", face = "bold", size = 14),
+        axis.title = element_text(color = "#4682B4", size = 11),
+        axis.text = element_text(color = "#8B4513", size = 9),
+        legend.title = element_text(color = "#2E8B57", face = "bold", size = 10))
+```
+```{r}
+datos_tsne_3grupos <- datos_tsne %>%
+  mutate(exam_score_grupo = case_when(
+    exam_score >= 80 ~ "Alto",
+    exam_score >= 60 ~ "Medio",
+    exam_score < 60 ~ "Bajo"
+  ))
+
+ggplot(datos_tsne_3grupos, aes(x = tSNE1, y = tSNE2, color = exam_score_grupo)) +
+  geom_point(size = 1.8, alpha = 0.7) +
+  scale_color_manual(
+    values = c("Alto" = "#2E8B57", "Medio" = "#FFD700", "Bajo" = "#DC143C"),
+    name = "Grupo de Calificación"
+  ) +
+  labs(title = "t-SNE - Estudiantes por Grupo de Calificación") +
+  theme_minimal() +
+  theme(plot.title = element_text(color = "#2E8B57", face = "bold", size = 14),
+        axis.title = element_text(color = "#4682B4", size = 11),
+        axis.text = element_text(color = "#8B4513", size = 9),
+        legend.title = element_text(color = "#2E8B57", face = "bold", size = 10),
+        legend.position = "bottom")
+```
+
+En este caso tsne no muestra una separacion tan evidente como en el caso de pca, aunque si se puede notar un degradado, debemos recordar que aun no establecemos ningun hiperparametro
+
+```{r}
+ggplot(datos_tsne_quantile,
+       aes(x = exam_score, y = tSNE1)) +
+  geom_boxplot(fill="darkblue")
+
+ggplot(datos_tsne_quantile,
+       aes(x = exam_score, y = tSNE2)) +
+  geom_boxplot(fill="darkblue")
+
+
+```
+Veremos que existen ligeros traslapes entre el como tsne hace una diferencia en los grupos, aunque se puede notar que es sigificativa, puede indicar que puede ser mejor que pca
+
+
+```{r}
+
+datos_tsne_3grupos <- datos_tsne %>%
+  mutate(exam_score_grupo = case_when(
+    exam_score >= 80 ~ "Alto",
+    exam_score >= 60 ~ "Medio",
+    exam_score < 60 ~ "Bajo"
+  ))
+
+ggplot(datos_tsne_3grupos, aes(x = tSNE1, y = tSNE2, color = exam_score_grupo)) +
+  geom_point(size = 1.8, alpha = 0.7) +
+  scale_color_manual(
+    values = c("Alto" = "#2E8B57", 
+               "Medio" = "#FFD700", 
+               "Bajo" = "#DC143C"),
+    name = "Grupo de Calificación"
+  ) +
+  labs(
+    title = "t-SNE - Estudiantes por Grupo de Calificación",
+    x = "tSNE Dimensión 1",
+    y = "tSNE Dimensión 2"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(color = "#2E8B57", face = "bold", size = 16),
+    axis.title = element_text(color = "#4682B4", size = 12),
+    axis.text = element_text(color = "#8B4513", size = 10),
+    legend.title = element_text(color = "#2E8B57", face = "bold", size = 11),
+    legend.position = "bottom"
+  )
+```
+
+Esta grafica muestra de forma un poco mas clara nuestra separacion entre grupos sin allterar demasiado las dimensiones del grafico
+
+Debemos recordar que este algoritmo uso la primera version de tsne ahora pasaremos a demostrar el poderio de la libreria de rtsne
+
+```{r}
+set.seed(123)
+
+start.time <- proc.time()
+
+df_Rtsne <- df_sin_categoricas %>%
+  dplyr::select(where(is.numeric)) %>%
+  scale() %>%
+  Rtsne() 
+
+proc.time()-start.time
+```
+
+```{r}
+datos_Rtsne <- data.frame(
+  Rtsne1 = df_Rtsne$Y[,1],
+  Rtsne2 = df_Rtsne$Y[,2],
+  exam_score = df$exam_score
+)
+
+datos_Rtsne_3grupos <- datos_Rtsne %>%
+  mutate(exam_score_grupo = case_when(
+    exam_score >= 80 ~ "Alto",
+    exam_score >= 60 ~ "Medio",
+    exam_score < 60 ~ "Bajo"
+  ))
+
+datos_Rtsne_quantile <- datos_Rtsne %>%
+  mutate(exam_score = cut(
+    exam_score,
+    breaks = quantile(exam_score, probs = seq(0, 1, 1/3), na.rm = TRUE),
+    include.lowest = TRUE,
+    labels = c("Bajo", "Medio", "Alto")
+  ))
+
+```
+
+```{r}
+ggplot(datos_Rtsne_quantile,aes(x=Rtsne1,y=Rtsne2))+
+geom_point(size=1.1,color="darkred")+
+labs(title="WDBC: Rtsne")
+```
+
+```{r}
+ggplot(datos_Rtsne_quantile, aes(x = Rtsne1, y = Rtsne2, color = exam_score)) +
+  geom_point(size = 1.8, alpha = 0.7) +
+  scale_color_manual(
+    values = c("Bajo" = "#DC143C", "Medio" = "#FFD700", "Alto" = "#2E8B57"),
+    name = "Cuantil de Calificación"
+  ) +
+  labs(title = "Rtsne - Estudiantes por Cuantil de Calificación") +
+  theme_minimal() +
+  theme(plot.title = element_text(color = "#2E8B57", face = "bold", size = 14),
+        axis.title = element_text(color = "#4682B4", size = 11),
+        axis.text = element_text(color = "#8B4513", size = 9),
+        legend.title = element_text(color = "#2E8B57", face = "bold", size = 10),
+        legend.position = "bottom")
+```
+
+Veremos que gracias a esta libreria la dispersion entre nuestros grupos y los datos en general es mejor, demostrando un mejor uso de la reduccion de dimension para explicar la varianza de nuestros datos
+
+```{r}
+library(patchwork)
+
+datos_Rtsne_3grupos <- datos_Rtsne %>%
+  mutate(exam_score_grupo = factor(
+    case_when(
+      exam_score >= 80 ~ "Alto",
+      exam_score >= 60 ~ "Medio",
+      exam_score < 60 ~ "Bajo"
+    ),
+    levels = c("Alto", "Medio", "Bajo")
+  ))
+
+p1 <- ggplot(datos_Rtsne_3grupos,
+             aes(x = exam_score_grupo, y = Rtsne1, fill = exam_score_grupo)) +
+  geom_boxplot(alpha = 0.8) +
+  scale_fill_manual(
+    values = c("Alto" = "#2E8B57", 
+               "Medio" = "#FFD700", 
+               "Bajo" = "#DC143C")
+  ) +
+  labs(
+    title = "Rtsne1 por Grupo",
+    x = "Grupo de Calificación",
+    y = "Rtsne1"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(color = "#2E8B57", face = "bold", size = 12),
+    axis.title = element_text(color = "#4682B4", size = 10),
+    axis.text = element_text(color = "#8B4513", size = 9),
+    legend.position = "none"
+  )
+
+p2 <- ggplot(datos_Rtsne_3grupos,
+             aes(x = exam_score_grupo, y = Rtsne2, fill = exam_score_grupo)) +
+  geom_boxplot(alpha = 0.8) +
+  scale_fill_manual(
+    values = c("Alto" = "#2E8B57", 
+               "Medio" = "#FFD700", 
+               "Bajo" = "#DC143C")
+  ) +
+  labs(
+    title = "Rtsne2 por Grupo",
+    x = "Grupo de Calificación",
+    y = "Rtsne2"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(color = "#2E8B57", face = "bold", size = 12),
+    axis.title = element_text(color = "#4682B4", size = 10),
+    axis.text = element_text(color = "#8B4513", size = 9),
+    legend.position = "none"
+  )
+
+p1 + p2 +
+  plot_annotation(
+    title = "Distribución de Dimensiones Rtsne por Grupo de Calificación",
+    theme = theme(
+      plot.title = element_text(color = "#2E8B57", face = "bold", size = 16, hjust = 0.5)
+    )
+  )
+```
+
+En este caso nuestro algoritmo nos da un traslape entre nuestros grupos ligeramente menos eficientes para los grupos intermedios, aunque para los extremos sigue siendo eficiente para los grupos de los extremos
+
+```{r}
+datos_Rtsne_3grupos <- datos_Rtsne %>%
+  mutate(exam_score_grupo = case_when(
+    exam_score >= 80 ~ "Alto",
+    exam_score >= 60 ~ "Medio",
+    exam_score < 60 ~ "Bajo"
+  ))
+
+colors_3 <- c(
+  "Alto" = "#2E8B57",
+  "Medio" = "#FFD700",
+  "Bajo" = "#DC143C"
+)
+
+ggplot(datos_Rtsne_3grupos, aes(x = Rtsne1, y = Rtsne2, color = exam_score_grupo)) +
+  geom_point(size = 1.8, alpha = 0.7) +
+  scale_color_manual(values = colors_3, name = "Grupo de Calificación") +
+  labs(
+    title = "Rtsne - Estudiantes por Grupo de Calificación",
+    x = "Rtsne Dimensión 1",
+    y = "Rtsne Dimensión 2"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(color = "#2E8B57", face = "bold", size = 16),
+    axis.title = element_text(color = "#4682B4", size = 12),
+    axis.text = element_text(color = "#8B4513", size = 10),
+    legend.title = element_text(color = "#2E8B57", face = "bold", size = 11),
+    legend.position = "bottom"
+  )
+```
+Esta grafica es un poco mas visible
+
+Ahora mostraremos los resultados de Tsne para 3 dimensiones
+
+```{r}
+set.seed(123)
+
+start.time <- proc.time()
+
+df_tsne_3d <- df_sin_categoricas %>%
+  dplyr::select(where(is.numeric)) %>%
+  scale() %>%
+  tsne(k=3)
+
+proc.time()-start.time
+```
+
+```{r}
+datos_tsne_3d <- data.frame(
+  tSNE1 = df_tsne_3d[,1],
+  tSNE2 = df_tsne_3d[,2],
+  tSNE3 = df_tsne_3d[,3],
+  exam_score = df$exam_score
+)
+
+datos_tsne_3d_grupos <- datos_tsne_3d %>%
+  mutate(exam_score_grupo = case_when(
+    exam_score >= 80 ~ "Alto",
+    exam_score >= 60 ~ "Medio",
+    exam_score < 60 ~ "Bajo"
+  ))
+
+colors_3 <- c(
+  "Alto" = "#2E8B57",
+  "Medio" = "#FFD700",
+  "Bajo" = "#DC143C"
+)
+
+hover_text <- paste(
+  "Grupo:", datos_tsne_3d_grupos$exam_score_grupo, "",
+  "Calificación:", round(datos_tsne_3d_grupos$exam_score, 1), "",
+  "tSNE1:", round(datos_tsne_3d_grupos$tSNE1, 3),
+  "tSNE2:", round(datos_tsne_3d_grupos$tSNE2, 3),
+  "tSNE3:", round(datos_tsne_3d_grupos$tSNE3, 3)
+)
+
+plot_ly(
+  data = datos_tsne_3d_grupos,
+  x = ~tSNE1,
+  y = ~tSNE2,
+  z = ~tSNE3,
+  type = "scatter3d",
+  mode = "markers",
+  marker = list(size = 6),
+  text = hover_text,
+  hoverinfo = "text",
+  color = ~exam_score_grupo,
+  colors = colors_3
+) %>%
+  plotly::layout(
+    title = "t-SNE 3D - Estudiantes por Grupo de Calificación",
+    scene = list(
+      xaxis = list(title = "tSNE Dimensión 1"),
+      yaxis = list(title = "tSNE Dimensión 2"),
+      zaxis = list(title = "tSNE Dimensión 3")
+    ),
+    legend = list(
+      title = list(text = "Grupo de Calificación")
+    )
+  )
+```
+
+Con nuestra primer libreria vemos que no hay mucho progreso los datos se ven muy dispersos como para realizar un analisis satisfactorio, ahora veremos como actua nuestra libreria mas eficiente
+
+```{r}
+set.seed(123)
+
+start.time <- proc.time()
+
+df_Rtsne_3d <- df_sin_categoricas %>%
+  dplyr::select(where(is.numeric)) %>%
+  scale() %>%
+  Rtsne(dims=3)
+
+
+proc.time()-start.time
+```
+
+```{r}
+datos_Rtsne_3d <- data.frame(
+  tSNE1 = df_Rtsne_3d$Y[,1],
+  tSNE2 = df_Rtsne_3d$Y[,2],
+  tSNE3 = df_Rtsne_3d$Y[,3],
+  exam_score = df$exam_score
+)
+
+datos_Rtsne_3d_grupos <- datos_Rtsne_3d %>%
+  mutate(exam_score_grupo = case_when(
+    exam_score >= 80 ~ "Alto",
+    exam_score >= 60 ~ "Medio",
+    exam_score < 60 ~ "Bajo"
+  ))
+
+colors_3 <- c(
+  "Alto" = "#2E8B57",
+  "Medio" = "#FFD700",
+  "Bajo" = "#DC143C"
+)
+
+hover_text <- paste(
+  "Grupo:", datos_Rtsne_3d_grupos$exam_score_grupo, "",
+  "Calificación:", round(datos_Rtsne_3d_grupos$exam_score, 1), "",
+  "tSNE1:", round(datos_Rtsne_3d_grupos$tSNE1, 3),
+  "tSNE2:", round(datos_Rtsne_3d_grupos$tSNE2, 3),
+  "tSNE3:", round(datos_Rtsne_3d_grupos$tSNE3, 3)
+)
+
+plot_ly(
+  data = datos_Rtsne_3d_grupos,
+  x = ~tSNE1,
+  y = ~tSNE2,
+  z = ~tSNE3,
+  type = "scatter3d",
+  mode = "markers",
+  marker = list(size = 6),
+  text = hover_text,
+  hoverinfo = "text",
+  color = ~exam_score_grupo,
+  colors = colors_3
+) %>%
+  plotly::layout(
+    title = "Rtsne 3D - Estudiantes por Grupo de Calificación",
+    scene = list(
+      xaxis = list(title = "Rtsne Dimensión 1"),
+      yaxis = list(title = "Rtsne Dimensión 2"),
+      zaxis = list(title = "Rtsne Dimensión 3")
+    ),
+    legend = list(
+      title = list(text = "Grupo de Calificación")
+    )
+  )
+```
+Los extremos de nuestros cuantiles estan bien separados, aunque para los cuantiles intermedios se encuentran agrupados entre si
+
+
+
+
+```{r}
+set.seed(123)
+
+tsne_params <-  expand.grid(perplexity=c(10,15,20,25,30,50)) ###Explorando parametro de perplejidad: perplexity. max_iter fijo 
+
+set.seed(123)
+
+start.time <- proc.time()
+
+tsne_res <- lapply(seq(nrow(tsne_params)), function(i) {
+	print(i)
+	res <- tsne::tsne(
+		X = df_sin_categoricas,
+            max_iter = 500,
+		perplexity = tsne_params[[1]][i]
+		
+	)
+	
+	return(res)
+})
+
+proc.time()-start.time  ###Esto tardó en mi compu: 332.33 segundos
+
+
+library(data.table)
+d1 <- rbindlist(lapply(seq(nrow(tsne_params)), function(i) {
+	data.table(
+		x = tsne_res[[i]][,1],
+		y = tsne_res[[i]][,2],
+		perplexity = tsne_params[[1]][i],
+		exam_score = df$exam_score
+	)
+}))
+```
+
+
+
+```{r}
+
+
+d1 <- d1 %>%
+  mutate(group = case_when(
+    exam_score >= 80 ~ "Alto",
+    exam_score >= 60 ~ "Medio",
+    exam_score < 60 ~ "Bajo"
+  )) %>%
+  mutate(group = factor(group, levels = c("Alto", "Medio", "Bajo")))
+
+# Graficar
+p1 <- ggplot(d1) +
+  geom_scattermore(
+    mapping = aes(x = x, y = y, colour = group),
+    pointsize = 3
+  ) +
+  scale_color_manual(
+    values = c("Alto" = "#2E8B57", 
+               "Medio" = "#FFD700", 
+               "Bajo" = "#DC143C"),
+    name = "Grupo de Calificación"
+  ) +
+  theme(
+    axis.text = element_blank(),
+    axis.ticks = element_blank(),
+    axis.title = element_blank(),
+    legend.position = "bottom"
+  ) +
+  facet_wrap(~perplexity, 
+             labeller = label_both,
+             scales = "free") +
+  theme_minimal() +
+  theme(
+    legend.position = "bottom",
+    strip.text = element_text(color = "#2E8B57", face = "bold", size = 12),
+    legend.title = element_text(color = "#2E8B57", face = "bold", size = 10)
+  )
+p1
+```
+
+
+```{r}
+
+set.seed(123)
+
+start.time <- proc.time()
+
+Rtsne_params <-  expand.grid(perplexity=c(10,15,20,25,30,50))
+	
+Rtsne_res <- lapply(seq(nrow(Rtsne_params)), function(i) {
+	print(i)
+	Rres <- Rtsne::Rtsne(
+		X = df_sin_categoricas,
+            max_iter = 500,
+            verbose=TRUE,
+            perplexity = Rtsne_params[[1]][i],
+            check_duplicates = FALSE
+		
+	)
+	
+	return(Rres)
+})
+
+proc.time()-start.time
+
+
+
+
+d2 <- rbindlist(lapply(seq(nrow(Rtsne_params)), function(i) {
+	data.table(
+		x = Rtsne_res[[i]]$Y[,1],
+		y = Rtsne_res[[i]]$Y[,2],
+		perplexity = Rtsne_params[[1]][i],
+		exam_score = df$exam_score
+	)
+}))
+	
+
+
+d2 <- d2 %>%
+  mutate(group = case_when(
+    exam_score >= 80 ~ "Alto",
+    exam_score >= 60 ~ "Medio",
+    exam_score < 60 ~ "Bajo"
+  )) %>%
+  mutate(group = factor(group, levels = c("Alto", "Medio", "Bajo")))
+											  
+p2 <- ggplot(d2) +
+	geom_scattermore(
+		mapping = aes(x = x, y = y,colour=group),
+		pointsize = 5
+	) +
+	theme(
+		axis.text = element_blank(),
+		axis.ticks = element_blank(),
+		axis.title = element_blank(),
+		legend.position = "none"
+	) +
+	facet_wrap("perplexity" , 
+		labeller = label_both,
+		scales = "free")
+p2 <- p2 + theme_minimal() +
+	theme(legend.position = "none")
+p2
+```
+
+
+
+```{r}
+
+set.seed(123)
+Rtsne_params2 = expand.grid(perplexity=c(10,15,20,25,30), eta = c(10, 50, 100, 150))  ###eta: tasa de aprendizaje
+
+Rtsne_res2 = lapply(seq(nrow(Rtsne_params2)), function(i) {
+  Rres = Rtsne(
+    X = df_sin_categoricas,
+    max_iter = 500,
+    verbose=TRUE,
+    perplexity = Rtsne_params2$perplexity[i],
+    check_duplicates = FALSE,
+    eta = Rtsne_params2$eta[i],
+    pca = F
+  )
+  return(Rres)
+})
+
+d3 = rbindlist(lapply(seq(nrow(Rtsne_params2)), function(i) {
+  data.table(
+    x = Rtsne_res2[[i]]$Y[,1],
+    y = Rtsne_res2[[i]]$Y[,2],
+    perplexity = Rtsne_params2[[1]][i],
+    eta = Rtsne_params2[[2]][i],
+		exam_score = df$exam_score
+  )
+}))
+
+
+d3 <- d3 %>%
+  mutate(group = case_when(
+    exam_score >= 80 ~ "Alto",
+    exam_score >= 60 ~ "Medio",
+    exam_score < 60 ~ "Bajo"
+  )) %>%
+  mutate(group = factor(group, levels = c("Alto", "Medio", "Bajo")))
+
+
+p3<-ggplot(d3) +
+  geom_scattermore(
+    mapping = aes(x = x, y = y ,colour=group),
+    pointsize = 5
+  ) +
+  theme(
+    axis.text = element_blank(),
+    axis.ticks = element_blank(),
+    axis.title = element_blank(),
+    legend.position = "none"
+  ) +
+  facet_wrap(eta~perplexity ,
+             labeller = label_both,
+             scales = "free",
+             ncol = 5) +
+  theme_bw() 
+
+p3
+```
+
+
+
+
+
+
+
+
