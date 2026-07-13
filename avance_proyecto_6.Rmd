@@ -511,6 +511,621 @@ plot_ly(
 ```
 Los extremos de nuestros cuantiles estan bien separados, aunque para los cuantiles intermedios se encuentran agrupados entre si
 
+Ahora vamos a pasar a la utilizacion de hiperparametros, primero aplicaremos el cambio de la perplejidad para 500 iteraciones con la libreria tsne
 ```{r}
+tsne_params <-  expand.grid(perplexity=c(10,15,20,25,30,50))
 
+datos_tsne_perp <- df %>%
+  dplyr::select(where(is.numeric)) %>%
+  scale()
+  
+start.time <- proc.time()
+
+tsne_res <- lapply(seq(nrow(tsne_params)), function(i) {
+	print(i)
+	res <- tsne::tsne(
+		X = datos_tsne_perp,
+            max_iter = 500,
+		perplexity = tsne_params[[1]][i]
+		
+	)
+	
+	return(res)
+})
+
+proc.time()-start.time
+```
+
+```{r}
+exam_score_division <- cut(
+  df$exam_score,
+  breaks = quantile(df$exam_score,
+                    probs = seq(0, 1, 0.25),
+                    na.rm = TRUE),
+  include.lowest = TRUE,
+  labels = c("Bajo", "Medio-Bajo", "Medio-Alto", "Alto")
+)
+
+d1 <- rbindlist(lapply(seq(nrow(tsne_params)), function(i) {
+  data.table(
+    x = tsne_res[[i]][,1],
+    y = tsne_res[[i]][,2],
+    perplexity = tsne_params[[1]][i],
+    exam_score_division = exam_score_division
+  )
+}))
+```
+
+```{r}
+p1 <- ggplot(d1) +
+	geom_scattermore(
+		mapping = aes(x = x, y = y,colour=exam_score_division,size=2),
+		pointsize = 4
+	) +
+	theme(
+		axis.text = element_blank(),
+		axis.ticks = element_blank(),
+		axis.title = element_blank(),
+		legend.position = "none"
+	) +
+	facet_wrap("perplexity" , 
+		labeller = label_both,
+		scales = "free")
+p1 <- p1 + theme_minimal() +
+	theme(legend.position = "none")
+p1
+
+```
+
+Veremos que no se forman grupos, por lo cual no obtenemos informacion muy util, sin embargo algo que podemos notar es que la perplejidad de 50 parece separar en ciertas regiones los cuantiles para el exam_score
+
+Ahora pasaremos a ver los resultados para Rtsne
+
+```{r}
+Rtsne_params <-  expand.grid(perplexity=c(10,15,20,25,30,50))
+
+datos_rtsne_perp <- df %>%
+  dplyr::select(where(is.numeric)) %>%
+  scale()
+  
+start.time <- proc.time()
+
+Rtsne_res <- lapply(seq(nrow(Rtsne_params)), function(i) {
+	print(i)
+	Rres <- Rtsne::Rtsne(
+		X = datos_rtsne_perp,
+            max_iter = 500,
+            verbose=TRUE,
+            perplexity = Rtsne_params[[1]][i],
+            check_duplicates = FALSE
+		
+	)
+	
+	return(Rres)
+})
+
+proc.time()-start.time
+```
+
+```{r}
+d2 <- rbindlist(lapply(seq(nrow(Rtsne_params)), function(i) {
+	data.table(
+		x = Rtsne_res[[i]]$Y[,1],
+		y = Rtsne_res[[i]]$Y[,2],
+		perplexity = Rtsne_params[[1]][i],
+		exam_score_division = exam_score_division
+	)
+}))
+```
+
+```{r}
+p2 <- ggplot(d2) +
+	geom_scattermore(
+		mapping = aes(x = x, y = y,colour=exam_score_division),
+		pointsize = 4
+	) +
+	theme(
+		axis.text = element_blank(),
+		axis.ticks = element_blank(),
+		axis.title = element_blank(),
+		legend.position = "none"
+	) +
+	facet_wrap("perplexity" , 
+		labeller = label_both,
+		scales = "free")
+p2 <- p2 + theme_minimal() +
+	theme(legend.position = "none")
+p2
+```
+
+De la misma forma no se crean grupos claros, sin embargo en este caso la perplejidad 30 muestra una separacion mas clara si coloreamos nuestros cuantiles, aunque repitiendo el patron pasado los cuantiles intermedios se mezclan ligeramente mas
+
+Ahora agregaremos como posible hiperparametro el uso de la tasa de aprendizaje eta, haremos dos mallas de hiperparametros de las cuales buscaremos diferentes combinaciones de parametros para buscar uno que se adecue de mejor manera a nuestro modelo
+
+Es importante hacer la notacion del tiempo de procesamiento para la libreria tsne por lo cual omitiremos su uso enfocandonos en la libreria de Rtsne
+
+```{r}
+Rtsne_params2 = expand.grid(perplexity=c(10,15,20,25,30), eta = c(10, 50, 100, 150))  
+
+Rtsne_res2 = lapply(seq(nrow(Rtsne_params2)), function(i) {
+  Rres = Rtsne(
+    X = datos_rtsne_perp,
+    max_iter = 500,
+    verbose=TRUE,
+    perplexity = Rtsne_params2$perplexity[i],
+    check_duplicates = FALSE,
+    eta = Rtsne_params2$eta[i],
+    pca = F
+  )
+  return(Rres)
+})
+```
+
+```{r}
+d3 = rbindlist(lapply(seq(nrow(Rtsne_params2)), function(i) {
+  data.table(
+    x = Rtsne_res2[[i]]$Y[,1],
+    y = Rtsne_res2[[i]]$Y[,2],
+    perplexity = Rtsne_params2[[1]][i],
+    eta = Rtsne_params2[[2]][i],
+    exam_score_division = exam_score_division
+  )
+}))
+
+
+p3<-ggplot(d3) +
+  geom_scattermore(
+    mapping = aes(x = x, y = y ,colour=exam_score_division),
+    pointsize = 2
+  ) +
+  theme(
+    axis.text = element_blank(),
+    axis.ticks = element_blank(),
+    axis.title = element_blank(),
+    legend.position = "none"
+  ) +
+  facet_wrap(eta~perplexity ,
+             labeller = label_both,
+             scales = "free",
+             ncol = 5) +
+  theme_bw() 
+
+p3
+```
+
+```{r}
+Rtsne_params3 = expand.grid(perplexity=c(10,15,20,30), eta = c(10, 50, 100, 150, 200))
+
+Rtsne_res3 = lapply(seq(nrow(Rtsne_params3)), function(i) {
+  Rres = Rtsne(
+    X = datos_rtsne_perp,
+    max_iter = 500,
+    verbose=TRUE,
+    perplexity = Rtsne_params3$perplexity[i],
+    check_duplicates = FALSE,
+    eta = Rtsne_params3$eta[i],
+    pca = F
+  )
+  return(Rres)
+})
+
+d4 = rbindlist(lapply(seq(nrow(Rtsne_params3)), function(i) {
+  data.table(
+    x = Rtsne_res3[[i]]$Y[,1],
+    y = Rtsne_res3[[i]]$Y[,2],
+    perplexity = Rtsne_params3[[1]][i],
+    eta = Rtsne_params3[[2]][i],
+    exam_score_division = exam_score_division
+  )
+}))
+
+
+p4<-ggplot(d4) +
+  geom_scattermore(
+    mapping = aes(x = x, y = y ,colour=exam_score_division),
+    pointsize = 2
+  ) +
+  theme(
+    axis.text = element_blank(),
+    axis.ticks = element_blank(),
+    axis.title = element_blank(),
+    legend.position = "none"
+  ) +
+  facet_wrap(eta~perplexity ,
+             labeller = label_both,
+             scales = "free",
+             ncol = 5) +
+  theme_bw() 
+
+p4
+```
+
+```{r}
+anim_plot1<-d4 %>% 
+  filter(perplexity == 10 | perplexity == 15 | perplexity == 20 | perplexity == 30) %>% 
+  mutate(parametros = factor(paste('perplexity:', perplexity, 'eta:', eta))) %>% ggplot() +
+  geom_scattermore(
+    mapping = aes(x = x, y = y, col = exam_score_division),
+    pointsize = 2
+  ) +
+  theme(
+    axis.text = element_blank(),
+    axis.ticks = element_blank(),
+    axis.title = element_blank(),
+    legend.position = "none"
+  ) +
+  theme_bw()+
+  labs(title = 'Verificación de los parámetros')+
+  scale_color_manual(values = colors) + 
+  transition_states(parametros, transition_length = 2, state_length = 3) +
+  labs(title = '{closest_state}')
+```
+
+```{r}
+transition_states(
+  parametros,
+  transition_length = 2,
+  state_length = 6
+)
+
+animate(
+  anim_plot1,
+  nframes = 120,
+  fps = 6,
+  width = 800,
+  height = 600,
+  renderer = gifski_renderer()
+)
+```
+
+```{r}
+anim_plot2<-d4 %>% 
+  filter(eta == 10 | eta == 50 | eta == 100 | eta == 150 | eta == 200) %>% 
+  mutate(parametros = factor(paste('perplexity:', perplexity, 'eta:', eta))) %>% ggplot() +
+  geom_scattermore(
+    mapping = aes(x = x, y = y, col = exam_score_division),
+    pointsize = 2
+  ) +
+  theme(
+    axis.text = element_blank(),
+    axis.ticks = element_blank(),
+    axis.title = element_blank(),
+    legend.position = "none"
+  ) +
+  theme_bw()+
+  labs(title = 'Verificación de los parámetros')+
+  scale_color_manual(values = colors) + 
+  transition_states(parametros,transition_length = 3, state_length = 1) +
+  labs(title = '{closest_state}'
+       )
+```
+
+```{r}
+transition_states(
+  parametros,
+  transition_length = 2,
+  state_length = 6
+)
+
+animate(
+  anim_plot2,
+  nframes = 120,
+  fps = 6,
+  width = 800,
+  height = 600,
+  renderer = gifski_renderer()
+)
+```
+
+Se solicita que se elijan los mejores hiperparametros de las animaciones
+```{r}
+mejor_perplexity <- 30
+mejor_eta <- 300
+
+df_RtsneF <- df %>%
+  dplyr::select(where(is.numeric)) %>%
+  scale() %>%
+  Rtsne(perplexity=mejor_perplexity, eta=mejor_eta) 
+
+datos_Rtsne_F<-data.frame(Rtsne1=df_RtsneF$Y[,1],Rtsne2=df_RtsneF$Y[,2],exam_score=df$exam_score)
+
+datos_Rtsne_quantile_F <- datos_Rtsne %>%
+  mutate(exam_score = cut(
+    exam_score,
+    breaks = quantile(exam_score, probs = seq(0, 1, 0.25), na.rm = TRUE),
+    include.lowest = TRUE,
+    labels = c("Bajo", "Medio-Bajo", "Medio-Alto", "Alto")
+  ))
+```
+
+```{r}
+ggplot(datos_Rtsne_quantile_F,
+       aes(x = Rtsne1, y = Rtsne2, color = exam_score_division)) +
+  geom_point(size = 1.5) +
+  labs(title = "Mejor Rtsne")
+```
+
+Ahora pasaremos a codificar mediante el modelo umap
+
+Comenzaremos realizando una transformacion umap sin hiperparametros
+```{r}
+df_umap <- df %>%
+  dplyr::select(where(is.numeric)) %>%
+  scale() %>%
+  umap()
+
+datos_umap <- data.frame(
+  UMAP1 = df_umap[,1],
+  UMAP2 = df_umap[,2],
+  exam_score = df$exam_score
+)
+
+datos_umap_quantile <- datos_umap %>%
+  mutate(exam_score = cut(
+    exam_score,
+    breaks = quantile(exam_score, probs = seq(0, 1, 0.25), na.rm = TRUE),
+    include.lowest = TRUE,
+    labels = c("Bajo", "Medio-Bajo", "Medio-Alto", "Alto")
+  ))
+```
+
+```{r}
+ggplot(datos_umap_quantile, aes(x = UMAP1, y = UMAP2, color = exam_score)) +
+  geom_point(size = 2) +
+  labs(title="WDBC: UMAP")
+```
+
+Umap sin hiperparametros no muestra una separacion muy util, y si decidimos ver si nuestra etiqueta de exam_score es util vemos que en especial el cuantil medio bajo esta demasiado disperso
+
+Vamos a probar ahora umap sin hiperparametros en 3 dimensiones
+
+```{r}
+df_umap_3d <- df %>%
+  dplyr::select(where(is.numeric)) %>%
+  scale() %>%
+  umap(n_components=3)
+
+datos_umap_3d <- data.frame(
+  UMAP1 = df_umap_3d[,1],
+  UMAP2 = df_umap_3d[,2],
+  UMAP3 = df_umap_3d[,3],  
+  exam_score = df$exam_score
+)
+
+datos_umap_3d_quantile <- datos_umap_3d %>%
+  mutate(exam_score = cut(
+    exam_score,
+    breaks = quantile(exam_score, probs = seq(0, 1, 0.25), na.rm = TRUE),
+    include.lowest = TRUE,
+    labels = c("Bajo", "Medio-Bajo", "Medio-Alto", "Alto")
+  ))
+```
+
+```{r}
+hover_text <- paste(
+  "Calificación:", datos_umap_3d_quantile$exam_score,
+  "<br>UMAP 1:", round(datos_umap_3d_quantile$UMAP1, 3),
+  "<br>UMAP 2:", round(datos_umap_3d_quantile$UMAP2, 3),
+  "<br>UMAP 3:", round(datos_umap_3d_quantile$UMAP3, 3)
+)
+
+plot_ly(
+  data = datos_umap_3d_quantile,
+  x = ~UMAP1,
+  y = ~UMAP2,
+  z = ~UMAP3,
+  type = "scatter3d",
+  mode = "markers",
+  marker = list(size = 6),
+  text = hover_text,
+  hoverinfo = "text",
+  color = ~exam_score,
+  colors = colors
+) %>%
+  plotly::layout(
+    title = "UMAP 3D",
+    scene = list(
+      xaxis = list(title = "UMAP Dimension 1"),
+      yaxis = list(title = "UMAP Dimension 2"),
+      zaxis = list(title = "UMAP Dimension 3")
+    )
+  )
+```
+
+No tenemos una separacion precisa para nuestros datos a menos que agreguemos el analisis de exam_score donde en algunos angulos podemos ver la separacion de cuantiles mejor que en el caso de 2 dimensiones
+
+```{r}
+umap_params = expand.grid(n_neighbors = c(10, 20, 50, 100),min_dist = c(0.5, 0.75, 1.1))
+
+datos_umap_pre <- df %>%
+  dplyr::select(where(is.numeric)) %>%
+  scale()
+
+umaps = lapply(seq(nrow(umap_params)), function(i) {
+    emb = umap(
+      X = datos_umap_pre,
+      n_neighbors = umap_params$n_neighbors[i],
+      min_dist  = umap_params$min_dist[i])
+
+  return(emb)
+})
+```
+
+```{r}
+d = rbindlist(lapply(seq(nrow(umap_params)), function(i) {
+  data.table(
+    x = umaps[[i]][,1],
+    y = umaps[[i]][,2],
+    n_neighbors = umap_params$n_neighbors[i],
+    min_dist = umap_params$min_dist[i],
+    exam_score_division = exam_score_division
+  )
+}))
+```
+
+```{r}
+p<-ggplot(d) +
+  geom_scattermore(
+    mapping = aes(x = x, y = y,colour=exam_score_division),
+    pointsize = 2
+  ) +
+  theme(
+    axis.text = element_blank(),
+    axis.ticks = element_blank(),
+    axis.title = element_blank(),
+    legend.position = "none"
+  ) +
+  facet_wrap(min_dist ~ n_neighbors ,
+             labeller = label_both,
+             scales = "free") +
+  theme_bw() +
+  labs(title = "WDBC: UMAP")
+
+p
+```
+
+```{r}
+umap_params1 = expand.grid(n_neighbors = c(50, 100, 150, 200),min_dist = c(0.5, 0.75, 1.1))
+
+umaps = lapply(seq(nrow(umap_params1)), function(i) {
+    emb = umap(
+      X = datos_umap_pre,
+      n_neighbors = umap_params$n_neighbors[i],
+      min_dist  = umap_params$min_dist[i])
+
+  return(emb)
+})
+```
+
+```{r}
+d1 = rbindlist(lapply(seq(nrow(umap_params1)), function(i) {
+  data.table(
+    x = umaps[[i]][,1],
+    y = umaps[[i]][,2],
+    n_neighbors = umap_params1$n_neighbors[i],
+    min_dist = umap_params1$min_dist[i],
+    exam_score_division = exam_score_division
+  )
+}))
+```
+
+```{r}
+p1<-ggplot(d1) +
+  geom_scattermore(
+    mapping = aes(x = x, y = y,colour=exam_score_division),
+    pointsize = 2
+  ) +
+  theme(
+    axis.text = element_blank(),
+    axis.ticks = element_blank(),
+    axis.title = element_blank(),
+    legend.position = "none"
+  ) +
+  facet_wrap(min_dist ~ n_neighbors ,
+             labeller = label_both,
+             scales = "free") +
+  theme_bw() +
+  labs(title = "WDBC: UMAP")
+
+p1
+```
+
+```{r}
+anim_plot3<-d1 %>% 
+  filter(n_neighbors == 10 | n_neighbors == 20 | n_neighbors == 50 | n_neighbors == 100) %>% 
+  mutate(parametros = factor(paste('n_neighbors:', n_neighbors, 'min_dist:', min_dist))) %>% ggplot() +
+  geom_scattermore(
+    mapping = aes(x = x, y = y, col = exam_score_division),
+    pointsize = 2
+  ) +
+  theme(
+    axis.text = element_blank(),
+    axis.ticks = element_blank(),
+    axis.title = element_blank(),
+    legend.position = "none"
+  ) +
+  theme_bw()+
+  labs(title = 'Verificación de los parámetros')+
+  scale_color_manual(values = colors) + 
+  transition_states(parametros, transition_length = 2, state_length = 3) +
+  labs(title = '{closest_state}')
+```
+
+```{r}
+transition_states(
+  parametros,
+  transition_length = 2,
+  state_length = 6
+)
+
+animate(
+  anim_plot3,
+  nframes = 120,
+  fps = 6,
+  width = 800,
+  height = 600,
+  renderer = gifski_renderer()
+)
+```
+
+```{r}
+anim_plot4<-d1 %>% 
+  filter(min_dist == 0.5 | min_dist == 0.75 | min_dist == 1.1) %>% 
+  mutate(parametros = factor(paste('n_neighbors:', n_neighbors, 'min_dist:', min_dist))) %>% ggplot() +
+  geom_scattermore(
+    mapping = aes(x = x, y = y, col = exam_score_division),
+    pointsize = 2
+  ) +
+  theme(
+    axis.text = element_blank(),
+    axis.ticks = element_blank(),
+    axis.title = element_blank(),
+    legend.position = "none"
+  ) +
+  theme_bw()+
+  labs(title = 'Selección de parámetros')+
+  scale_color_manual(values = colors) + 
+  transition_states(parametros, transition_length = 2, state_length = 3) +
+  labs(title = '{closest_state}')
+```
+
+```{r}
+transition_states(
+  parametros,
+  transition_length = 2,
+  state_length = 6
+)
+
+animate(
+  anim_plot4,
+  nframes = 120,
+  fps = 6,
+  width = 800,
+  height = 600,
+  renderer = gifski_renderer()
+)
+```
+
+```{r}
+mejor_min_dist <- 0.5
+mejor_n_neighbors <- 200
+  
+  
+Final_plot<-d1 %>% 
+  filter(min_dist == mejor_min_dist , n_neighbors == mejor_n_neighbors) %>% 
+  mutate(parametros = factor(paste('n_neighbors:', n_neighbors, 'min_dist:', min_dist))) %>% ggplot() +
+  geom_scattermore(
+    mapping = aes(x = x, y = y, col = exam_score_division),
+    pointsize = 4
+  ) +
+  theme(
+    axis.text = element_blank(),
+    axis.ticks = element_blank(),
+    axis.title = element_blank(),
+    legend.position = "none"
+  ) +
+  theme_bw()+
+  labs(title = 'UMAP: Modelo final')
+
+Final_plot
 ```
