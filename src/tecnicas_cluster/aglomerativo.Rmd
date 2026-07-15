@@ -1,0 +1,397 @@
+---
+title: "Reducción de dimensión: PC - Proyecto modulo 6"
+author: "Eumir Rendon, Raúl Llamosas, etc"
+date: "2026-06-23"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+
+```{r}
+
+library(tidymodels)
+library(tidyverse)
+library(tidyclust)
+library(factoextra)
+library(FactoMineR)
+library(cluster)
+library(mlr)
+library(GGally)
+library(ClusterR)
+library(vegan)
+library(NbClust)
+library(gridExtra)
+library(grid)
+library(lattice)
+require(igraph)
+library(recipes)
+library(rsample)
+library(workflows)
+library(tune)
+library(parameters)
+library(pvclust)
+library(clustertend)
+library(hopkins)
+library(flextable)
+tidymodels_prefer()
+
+df<-read.csv("/home/yamorza/Documentos/espacio_trabajo_intro_analisis_dat2/proyecto_modulo_6/src/habits.csv")
+
+df %>% dim()
+
+df %>% glimpse()
+
+df %>% head()
+```
+
+
+```{r}
+library(dplyr)
+
+df_encoded <- df %>%
+  mutate(
+    # Binary: Male = 0, Female = 1
+    part_time_job = ifelse(part_time_job== "No",1,0),
+    extracurricular_participation = ifelse(extracurricular_participation== "Yes",1,0),
+
+    gender = ifelse(gender == "Male", 0, 1),
+    
+    # Ordinal: poor = 0, average = 1, good = 2
+    internet_quality = case_when(
+      internet_quality == "Poor" ~ 0,
+      internet_quality == "Average" ~ 1,
+      internet_quality == "Good" ~ 2
+    ),
+    
+    # Same ordinal encoding
+    diet_quality = case_when(
+      diet_quality == "Poor" ~ 0,
+      diet_quality == "Fair" ~ 1,
+      diet_quality == "Good" ~ 2
+    ),
+    
+    # Ordinal: None = 0, High School = 1, Bachelor = 2, Master = 3
+    parental_education_level = case_when(
+      parental_education_level == "None" ~ 0,
+      parental_education_level == "High School" ~ 1,
+      parental_education_level == "Bachelor" ~ 2,
+      parental_education_level == "Master" ~ 3
+    )
+  )
+```
+
+
+
+```{r}
+df1<- df_encoded %>% dplyr::select(-exam_score) %>% scale()
+summary(df1)
+
+head(df1)
+
+###Calculando distancias (distancia euclideana)
+
+dist_df <- dist(df1, method = "euclidean")
+
+hc_ave <- hclust(dist_df, method = "average")
+hc_single<-hclust(dist_df, method = "single")
+hc_comp<-hclust(dist_df, method = "complete")
+hc_ward<-hclust(dist_df, method = "ward.D")
+hc_ward2<-hclust(dist_df, method = "ward.D2")
+```
+###Distancia cophenetic
+
+
+```{r}
+d_ave <- cophenetic(hc_ave)
+d_single <- cophenetic(hc_single)
+d_comp<- cophenetic(hc_comp)
+d_ward<- cophenetic(hc_ward)
+d_ward2<-cophenetic(hc_ward2)
+
+cbind(cor(dist_df,d_ave),cor(dist_df,d_single),cor(dist_df,d_comp),cor(dist_df,d_ward),cor(dist_df,d_ward2))
+
+plot(hc_ave)
+
+###"OH, MI DIOS"
+
+plot(hc_comp)
+```
+###Una que generalmente funciona "mas mejor" es la de ward
+
+
+```{r}
+library(hopkins)
+
+plot(hc_ward)
+abline(h=150,lty=3,col="red")
+
+plot(hc_ward2)
+abline(h=45,lty=3,col="red")
+
+###Con la primer liga, si se corta en 150 se pueden visualizar dos grupos; en la segunda si se corta en 45
+###también se observan dos grupos
+
+par(mfrow = c(2, 2), mar = c(2, 2, 3, 1))
+for (m in c("ward.D2", "complete", "average", "single")) {
+  plot(hclust(dist_df, method = m), hang = -1, cex = 0.8,
+       main = paste("Linkage:", m), xlab = "", sub = "",col="darkmagenta")
+}
+
+###La estadística de Hopkins es una herramienta de aprendizaje automático que se utiliza para evaluar la tendencia 
+###a la agrupación de un conjunto de datos antes de aplicar algoritmos como K-Means. Prueba la aleatoriedad espacial, 
+###que determina si los datos presentan agrupaciones significativas o si se trata simplemente de una distribución aleatoria uniforme
+
+set.seed(123)
+Hopkins_tend <- factoextra::get_clust_tendency(
+  df_encoded, n = nrow(df_encoded) - 1,
+  gradient = list(low = "steelblue", high = "white")
+)
+cat("Hopkins statistic:", round(Hopkins_tend$hopkins_stat, 3), "\n")
+
+cat("Interpretación:",
+    ifelse(Hopkins_tend$hopkins_stat > 0.7, "Los datos presentan una tendencia a agruparse en clusteras (H > 0.7)",
+    ifelse(Hopkins_tend$hopkins_stat > 0.5, "Existe alguna tendencia al agrupamiento en los datos (H > 0.5)",
+           "Los datos presentan una distribución espacial uniforme: La agrupación sería cuestionable")), "\n")
+
+set.seed(123)
+hopkins::hopkins(df_encoded)
+```
+##El estadistico de silueta (Silhouette) (conocido comunmente como coeficiente de silueta) es una metrica utilizada en el aprendizaje no supervisado 
+##para evaluar la calidad y validez de los algoritmos de agrupamiento. Mide la similitud de una observacion con su propio cluster en comparacion con otros clusteres.
+
+# La métrica de evaluación del proceso de clustering: Silhouette
+
+###Proceso de búsqueda con cluster herárquico
+
+# tuning el número de clusteres
+
+
+```{r}
+tune_spec <- hier_clust(num_clusters = tune(),linkage_method = "ward.D2") %>% 
+  set_engine("stats")
+
+cluster_grid <- tibble(num_clusters = 2:10)
+
+set.seed(123)
+tune_results <- tune_cluster(
+  tune_spec,
+  ~ .,
+  data = scale(df_encoded),
+  resamples = vfold_cv(df_encoded, v = 10),
+  grid = cluster_grid,
+  metrics = cluster_metric_set(silhouette_avg)
+)
+
+show_best(tune_results, metric = "silhouette_avg")
+
+metrics_df <- collect_metrics(tune_results)
+
+ggplot(metrics_df, aes(x = num_clusters, y = mean)) +
+  geom_line(color = "steelblue", size = 1) +
+  geom_point(color = "darkred", size = 3) +
+  labs(
+    title = "Proceso tuning de cluster: Silhouette Method",
+    subtitle = "Evaluación de k = 1 to 10 con 5 folds",
+    x = "Número de of Clusters (k)",
+    y = "Promedio Silhouette Score"
+  ) +
+  theme_minimal()
+
+###Óptimo número de clustres: 2
+
+###Visualizar resultados
+
+hc.cut <- hcut(scale(df_encoded), k = 2, hc_method = "ward.D2")
+
+fviz_dend(hc.cut, show_labels = FALSE, rect = TRUE)
+
+fviz_silhouette(hc.cut)  ###¿?
+
+fviz_dend(hc_ward, cex = 0.8, k = 2,k_colors =c("#FC4E07","#a8a632") ,type = "circular")
+
+fviz_dend(hc_ward, cex = 0.8, k = 3,k_colors =c("#FC4E07","#a8a632") ,type = "phylogenic")
+
+fviz_dend(hc_ward, cex = 0.8, k = 3,k_colors =c("#FC4E07","#a8a632") ,type = "phylogenic", repel=TRUE)
+
+###Con otro metodo aglomerativo: agnes
+
+df1<-as.data.frame(scale(df_encoded))
+
+ac_metric <- list(
+  complete_ac = agnes(df1, metric = "euclidean", method = "complete")$ac,
+  average_ac = agnes(df1, metric = "euclidean", method = "average")$ac,
+  single_ac = agnes(df1, metric = "euclidean", method = "single")$ac,
+  ward_ac = agnes(df1, metric = "euclidean", method = "ward")$ac
+)
+
+ac_metric
+
+plot(agnes(df1, metric = "euclidean", method = "ward"))
+
+###Aparentemente misma agrupacion que con la liga ward
+
+###Con un metodo divisivo: diana
+
+plot(diana(df1, metric = "euclidean"))
+```
+###Nada claro
+
+###Puede observarse que el metodo jerarquico tiene muchos inconvenientes, y es enormemente subjetivo
+###Además, si la cantidad de observaciones es grande, el dendrograma dificilmente ayudaria a identificar agrupaciones
+
+# Silhoutte Visualization 
+
+```{r}
+library(tidyclust)
+
+
+set.seed(123)
+viz_my_silhoutte <- function(data,nCluster){
+
+  agCluster <- kmeans(data, centers = nCluster,
+                      iter.max = 100, nstart= 20, algorithm = "Forgy")
+ g <- fviz_silhouette(cluster::silhouette(agCluster$cluster, dist(data))) 
+ return (g)
+}
+
+data <- df_encoded
+k = 2
+viz_my_silhoutte(data, k)
+
+###Mas tecnicas para determinar el numero de clusters subyacente a estos datos
+
+set.seed(123)
+
+nc<-n_clusters(
+  df_encoded,
+  standardize = TRUE,
+  include_factors = FALSE,
+  package = c("easystats", "NbClust", "mclust"),
+  fast = TRUE,
+  hclust_method = "ward.D2",
+  n_max = 10
+)
+
+nc
+
+plot(nc)
+
+###
+
+set.seed(123)
+
+elbow<-n_clusters_elbow(
+  df_encoded,
+  standardize = TRUE,
+  include_factors = FALSE,
+  clustering_function = stats::kmeans,
+  n_max = 10
+)
+
+elbow
+
+plot(elbow)
+
+###
+
+set.seed(123)
+
+gap<-n_clusters_gap(
+  df_encoded,
+  standardize = TRUE,
+  include_factors = FALSE,
+  clustering_function = stats::kmeans,
+  n_max = 10,
+  gap_method = "firstSEmax"
+)
+
+gap
+
+plot(gap)
+
+###
+
+set.seed(123)
+
+si<-n_clusters_silhouette(
+  df_encoded,
+  standardize = TRUE,
+  include_factors = FALSE,
+  clustering_function = stats::kmeans,
+  n_max = 10
+)
+
+si
+
+plot(si)
+
+###
+
+set.seed(123)
+
+dbscan<-n_clusters_dbscan(
+  df_encoded,
+  standardize = TRUE,
+  include_factors = FALSE,
+  method = c("kNN", "SS"),
+  min_size = 0.1,
+  eps_n = 50,
+  eps_range = c(0.1, 3)
+)
+
+dbscan
+
+plot(dbscan)
+
+###
+
+set.seed(123)
+
+hclust<-n_clusters_hclust(
+  df_encoded,
+  standardize = TRUE,
+  include_factors = FALSE,
+  distance_method = "euclidean",
+  hclust_method = "ward.D2",
+  ci = 0.95,
+  iterations = 25
+)
+
+hclust
+
+plot(hclust)
+
+###Casi todas estas estadísticas apuntan a que en estos datos subyacen 2 cluster
+
+###Predicción
+
+hclust_spec1 <- hier_clust(num_clusters = 2,linkage_method = "ward.D2") %>%
+                set_engine("stats")
+
+hclust_spec1
+
+hclust_final <- fit(hclust_spec1, ~., data = as.data.frame(scale(df_encoded[1:500,])))
+
+hclust_final$fit |>plot()
+
+hc_summary <- hclust_final |> extract_fit_summary()
+
+hc_summary |> str()
+
+hclust_final |> extract_centroids()|>print(Inf)
+
+hc_preds <- hclust_final |> predict(as.data.frame(scale(df_encoded[501:569,])))
+
+hc_preds
+
+class<-df$exam_score[501:569]
+
+table(class, hc_preds$.pred_cluster)
+```
+
+
+
+
+
+

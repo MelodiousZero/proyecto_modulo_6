@@ -47,14 +47,49 @@ df<-read.csv("/home/yamorza/Documentos/espacio_trabajo_intro_analisis_dat2/proye
 
 Comenzaremos con nuestra reduccion PCA
 
-Vamos a estandarizar nuestras variables y lidiar con las variables categóricas mencionadas en el paso anterior por medio de dummies.
+Vamos a estandarizar nuestras variables y lidiar con las variables categóricas mencionadas en el paso anterior por medio de codificación
 
 ```{r}
-df_pca <- df %>%
+library(dplyr)
+
+df_encoded <- df %>%
+  mutate(
+    # Binary: Male = 0, Female = 1
+    part_time_job = ifelse(part_time_job== "No",1,0),
+    extracurricular_participation = ifelse(extracurricular_participation== "Yes",1,0),
+
+    gender = ifelse(gender == "Male", 0, 1),
+    
+    # Ordinal: poor = 0, average = 1, good = 2
+    internet_quality = case_when(
+      internet_quality == "Poor" ~ 0,
+      internet_quality == "Average" ~ 1,
+      internet_quality == "Good" ~ 2
+    ),
+    
+    # Same ordinal encoding
+    diet_quality = case_when(
+      diet_quality == "Poor" ~ 0,
+      diet_quality == "Fair" ~ 1,
+      diet_quality == "Good" ~ 2
+    ),
+    
+    # Ordinal: None = 0, High School = 1, Bachelor = 2, Master = 3
+    parental_education_level = case_when(
+      parental_education_level == "None" ~ 0,
+      parental_education_level == "High School" ~ 1,
+      parental_education_level == "Bachelor" ~ 2,
+      parental_education_level == "Master" ~ 3
+    )
+  )
+```
+
+
+```{r}
+df_pca <- df_encoded %>%
   select(-exam_score)
 
 receta_pca <- recipe(~ ., data = df_pca) %>%
-  step_dummy(all_nominal_predictors()) %>%
   step_normalize(all_predictors())
 
 datos_preparados <- prep(receta_pca) %>%
@@ -125,20 +160,15 @@ ggplot(scree_data[1:10, ], aes(x = Componente)) +
 
 ```
 Notamos que necesitamos muchas componentes para explicar varianza.
-¿Qué pasa si eliminamos las variables categóricas? Como vimos en el análisis exploratorio de datos, no tienen mucha correlación con exam score. Reducir el número de columnas definitvamente nos ayudaría en simplificar el modelo.
+¿Qué pasa si eliminamos las variables categóricas irrelevantes? Como vimos en el análisis exploratorio de datos, no tienen mucha correlación con exam score. Reducir el número de columnas definitvamente nos ayudaría en simplificar el modelo.
+
+
 
 ```{r}
-df_sin_categoricas <- df %>%
-  select(study_hours_per_day, mental_health_rating, exercise_frequency,
-         sleep_hours, attendance_percentage, netflix_hours, social_media_hours,exam_score) 
-```
-
-```{r}
-df_pca <- df_sin_categoricas %>%
-  select(-exam_score)
+df_pca <- df_encoded %>%
+  select(-c(exam_score,gender,part_time_job,extracurricular_participation,internet_quality,parental_education_level))
 
 receta_pca <- recipe(~ ., data = df_pca) %>%
-  step_dummy(all_nominal_predictors()) %>%
   step_normalize(all_predictors())
 
 datos_preparados <- prep(receta_pca) %>%

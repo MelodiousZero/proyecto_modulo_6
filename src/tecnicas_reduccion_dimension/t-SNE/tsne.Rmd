@@ -57,11 +57,52 @@ df_sin_categoricas <- df %>%
 ```
 
 ```{r}
+df_sin_categoricas <- df %>%
+  select(-exam_score)
+```
+
+```{r}
+library(dplyr)
+
+df_encoded <- df %>%
+  mutate(
+    # Binary: Male = 0, Female = 1
+    part_time_job = ifelse(part_time_job== "No",1,0),
+    extracurricular_participation = ifelse(extracurricular_participation== "Yes",1,0),
+
+    gender = ifelse(gender == "Male", 0, 1),
+    
+    # Ordinal: poor = 0, average = 1, good = 2
+    internet_quality = case_when(
+      internet_quality == "Poor" ~ 0,
+      internet_quality == "Average" ~ 1,
+      internet_quality == "Good" ~ 2
+    ),
+    
+    # Same ordinal encoding
+    diet_quality = case_when(
+      diet_quality == "Poor" ~ 0,
+      diet_quality == "Fair" ~ 1,
+      diet_quality == "Good" ~ 2
+    ),
+    
+    # Ordinal: None = 0, High School = 1, Bachelor = 2, Master = 3
+    parental_education_level = case_when(
+      parental_education_level == "None" ~ 0,
+      parental_education_level == "High School" ~ 1,
+      parental_education_level == "Bachelor" ~ 2,
+      parental_education_level == "Master" ~ 3
+    )
+  )
+```
+
+
+```{r}
 set.seed(123)
 
 start.time <- proc.time()
 
-df_tsne <- df_sin_categoricas %>%
+df_tsne <- df_encoded %>%
   scale() %>%
   tsne()
 
@@ -193,8 +234,7 @@ set.seed(123)
 
 start.time <- proc.time()
 
-df_Rtsne <- df_sin_categoricas %>%
-  dplyr::select(where(is.numeric)) %>%
+df_Rtsne <- df_encoded %>%
   scale() %>%
   Rtsne() 
 
@@ -355,8 +395,8 @@ set.seed(123)
 
 start.time <- proc.time()
 
-df_tsne_3d <- df_sin_categoricas %>%
-  dplyr::select(where(is.numeric)) %>%
+df_tsne_3d <- df_encoded %>%
+  #dplyr::select(where(is.numeric)) %>%
   scale() %>%
   tsne(k=3)
 
@@ -425,8 +465,8 @@ set.seed(123)
 
 start.time <- proc.time()
 
-df_Rtsne_3d <- df_sin_categoricas %>%
-  dplyr::select(where(is.numeric)) %>%
+df_Rtsne_3d <- df_encoded %>%
+  ##dplyr::select(where(is.numeric)) %>%
   scale() %>%
   Rtsne(dims=3)
 
@@ -502,10 +542,14 @@ set.seed(123)
 
 start.time <- proc.time()
 
+df_sin_exam_score <- df_encoded %>%
+  select(-exam_score)
+
+
 tsne_res <- lapply(seq(nrow(tsne_params)), function(i) {
 	print(i)
 	res <- tsne::tsne(
-		X = df_sin_categoricas,
+		X = df_sin_exam_score,
             max_iter = 500,
 		perplexity = tsne_params[[1]][i]
 		
@@ -573,42 +617,34 @@ p1
 
 
 ```{r}
-
 set.seed(123)
 
 start.time <- proc.time()
 
-Rtsne_params <-  expand.grid(perplexity=c(10,15,20,25,30,50))
-	
+Rtsne_params <- expand.grid(perplexity = c(10, 15, 20, 25, 30, 50))
+
 Rtsne_res <- lapply(seq(nrow(Rtsne_params)), function(i) {
-	print(i)
-	Rres <- Rtsne::Rtsne(
-		X = df_sin_categoricas,
-            max_iter = 500,
-            verbose=TRUE,
-            perplexity = Rtsne_params[[1]][i],
-            check_duplicates = FALSE
-		
-	)
-	
-	return(Rres)
+  print(i)
+  Rres <- Rtsne::Rtsne(
+    X = df_sin_exam_score,
+    max_iter = 500,
+    verbose = TRUE,
+    perplexity = Rtsne_params$perplexity[i],
+    check_duplicates = FALSE
+  )
+  return(Rres)
 })
 
-proc.time()-start.time
-
-
-
+proc.time() - start.time
 
 d2 <- rbindlist(lapply(seq(nrow(Rtsne_params)), function(i) {
-	data.table(
-		x = Rtsne_res[[i]]$Y[,1],
-		y = Rtsne_res[[i]]$Y[,2],
-		perplexity = Rtsne_params[[1]][i],
-		exam_score = df$exam_score
-	)
+  data.table(
+    x = Rtsne_res[[i]]$Y[,1],
+    y = Rtsne_res[[i]]$Y[,2],
+    perplexity = Rtsne_params$perplexity[i],
+    exam_score = df$exam_score
+  )
 }))
-	
-
 
 d2 <- d2 %>%
   mutate(group = case_when(
@@ -617,56 +653,66 @@ d2 <- d2 %>%
     exam_score < 60 ~ "Bajo"
   )) %>%
   mutate(group = factor(group, levels = c("Alto", "Medio", "Bajo")))
-											  
+
 p2 <- ggplot(d2) +
-	geom_scattermore(
-		mapping = aes(x = x, y = y,colour=group),
-		pointsize = 5
-	) +
-	theme(
-		axis.text = element_blank(),
-		axis.ticks = element_blank(),
-		axis.title = element_blank(),
-		legend.position = "none"
-	) +
-	facet_wrap("perplexity" , 
-		labeller = label_both,
-		scales = "free")
-p2 <- p2 + theme_minimal() +
-	theme(legend.position = "none")
-p2
+  geom_scattermore(
+    mapping = aes(x = x, y = y, colour = group),
+    pointsize = 5
+  ) +
+  scale_color_manual(
+    values = c("Alto" = "#2E8B57", 
+               "Medio" = "#FFD700", 
+               "Bajo" = "#DC143C"),
+    name = "Grupo de Calificación"
+  ) +
+  theme(
+    axis.text = element_blank(),
+    axis.ticks = element_blank(),
+    axis.title = element_blank(),
+    legend.position = "bottom"
+  ) +
+  facet_wrap(~perplexity, 
+             labeller = label_both,
+             scales = "free") +
+  theme_minimal() +
+  theme(
+    legend.position = "bottom",
+    strip.text = element_text(color = "#2E8B57", face = "bold", size = 12),
+    legend.title = element_text(color = "#2E8B57", face = "bold", size = 10)
+  ) +
+  labs(title = "Rtsne - Comparación de Perplejidad")
+
+print(p2)
 ```
 
 
 
 ```{r}
-
 set.seed(123)
-Rtsne_params2 = expand.grid(perplexity=c(10,15,20,25,30), eta = c(10, 50, 100, 150))  ###eta: tasa de aprendizaje
+Rtsne_params2 <- expand.grid(perplexity = c(10, 15, 20, 25, 30), eta = c(10, 50, 100, 150))
 
-Rtsne_res2 = lapply(seq(nrow(Rtsne_params2)), function(i) {
-  Rres = Rtsne(
-    X = df_sin_categoricas,
+Rtsne_res2 <- lapply(seq(nrow(Rtsne_params2)), function(i) {
+  Rres <- Rtsne(
+    X = df_encoded,
     max_iter = 500,
-    verbose=TRUE,
+    verbose = TRUE,
     perplexity = Rtsne_params2$perplexity[i],
     check_duplicates = FALSE,
     eta = Rtsne_params2$eta[i],
-    pca = F
+    pca = FALSE
   )
   return(Rres)
 })
 
-d3 = rbindlist(lapply(seq(nrow(Rtsne_params2)), function(i) {
+d3 <- rbindlist(lapply(seq(nrow(Rtsne_params2)), function(i) {
   data.table(
     x = Rtsne_res2[[i]]$Y[,1],
     y = Rtsne_res2[[i]]$Y[,2],
-    perplexity = Rtsne_params2[[1]][i],
-    eta = Rtsne_params2[[2]][i],
-		exam_score = df$exam_score
+    perplexity = Rtsne_params2$perplexity[i],
+    eta = Rtsne_params2$eta[i],
+    exam_score = df$exam_score
   )
 }))
-
 
 d3 <- d3 %>%
   mutate(group = case_when(
@@ -676,11 +722,81 @@ d3 <- d3 %>%
   )) %>%
   mutate(group = factor(group, levels = c("Alto", "Medio", "Bajo")))
 
+p3 <- ggplot(d3) +
+  geom_scattermore(
+    mapping = aes(x = x, y = y, colour = group),
+    pointsize = 5
+  ) +
+  scale_color_manual(
+    values = c("Alto" = "#2E8B57", 
+               "Medio" = "#FFD700", 
+               "Bajo" = "#DC143C"),
+    name = "Grupo de Calificación"
+  ) +
+  theme(
+    axis.text = element_blank(),
+    axis.ticks = element_blank(),
+    axis.title = element_blank(),
+    legend.position = "bottom"
+  ) +
+  facet_wrap(eta ~ perplexity,
+             labeller = label_both,
+             scales = "free",
+             ncol = 5) +
+  theme_minimal() +
+  theme(
+    legend.position = "bottom",
+    strip.text = element_text(color = "#2E8B57", face = "bold", size = 9),
+    legend.title = element_text(color = "#2E8B57", face = "bold", size = 10),
+    plot.title = element_text(color = "#2E8B57", face = "bold", size = 16, hjust = 0.5)
+  ) +
+  labs(title = "Rtsne - Comparación de Perplejidad y Eta (Tasa de Aprendizaje)")
 
-p3<-ggplot(d3) +
+print(p3)
+
+```
+
+
+```{r}
+set.seed(123)
+Rtsne_params3 = expand.grid(perplexity=c(10,15,20,30), eta = c(10, 50, 100, 150, 200))  ###eta: tasa de aprendizaje
+
+Rtsne_res3 = lapply(seq(nrow(Rtsne_params3)), function(i) {
+  Rres = Rtsne(
+    X = df_encoded,
+    max_iter = 500,
+    verbose=TRUE,
+    perplexity = Rtsne_params3$perplexity[i],
+    check_duplicates = FALSE,
+    eta = Rtsne_params3$eta[i],
+    pca = F
+  )
+  return(Rres)
+})
+
+d4 = rbindlist(lapply(seq(nrow(Rtsne_params3)), function(i) {
+  data.table(
+    x = Rtsne_res3[[i]]$Y[,1],
+    y = Rtsne_res3[[i]]$Y[,2],
+    perplexity = Rtsne_params3[[1]][i],
+    eta = Rtsne_params3[[2]][i],
+    exam_score = df$exam_score
+  )
+}))
+
+d4 <- d4 %>%
+  mutate(group = case_when(
+    exam_score >= 80 ~ "Alto",
+    exam_score >= 60 ~ "Medio",
+    exam_score < 60 ~ "Bajo"
+  )) %>%
+  mutate(group = factor(group, levels = c("Alto", "Medio", "Bajo")))
+
+
+p4<-ggplot(d4) +
   geom_scattermore(
     mapping = aes(x = x, y = y ,colour=group),
-    pointsize = 5
+    pointsize = 2
   ) +
   theme(
     axis.text = element_blank(),
@@ -694,10 +810,56 @@ p3<-ggplot(d3) +
              ncol = 5) +
   theme_bw() 
 
-p3
+p4
+
+
+colores = c('#E178C5','#EB5B00','#AEC')
+names(colores) = c("B","M","A")
+
+anim_plot1<-d4 %>% 
+  filter(perplexity == 10 | perplexity == 15 | perplexity == 20 | perplexity == 30) %>% 
+  mutate(parametros = factor(paste('perplexity:', perplexity, 'eta:', eta))) %>% ggplot() +
+  geom_scattermore(
+    mapping = aes(x = x, y = y, col = group),
+    pointsize = 2
+  ) +
+  theme(
+    axis.text = element_blank(),
+    axis.ticks = element_blank(),
+    axis.title = element_blank(),
+    legend.position = "none"
+  ) +
+  theme_bw()+
+  labs(title = 'Verificación de los parámetros')+
+  scale_color_manual(values = colores) + 
+  transition_states(parametros, transition_length = 2, state_length = 3) +
+  labs(title = '{closest_state}')
+
+animate(anim_plot1, nframes = 200)
+
+
+
+anim_plot2<-d4 %>% 
+  filter(eta == 10 | eta == 50 | eta == 100 | eta == 150 | eta == 200) %>% 
+  mutate(parametros = factor(paste('perplexity:', perplexity, 'eta:', eta))) %>% ggplot() +
+  geom_scattermore(
+    mapping = aes(x = x, y = y, col = group),
+    pointsize = 2
+  ) +
+  theme(
+    axis.text = element_blank(),
+    axis.ticks = element_blank(),
+    axis.title = element_blank(),
+    legend.position = "none"
+  ) +
+  theme_bw()+
+  labs(title = 'Verificación de los parámetros')+
+  scale_color_manual(values = colores) + 
+  transition_states(parametros,transition_length = 3, state_length = 1) +
+  labs(title = '{closest_state}')
+
+animate(anim_plot2, nframes = 300)
 ```
-
-
 
 
 
