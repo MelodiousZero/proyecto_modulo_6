@@ -1,0 +1,237 @@
+---
+title: Estadística Descriptiva
+jupyter: python3
+---
+
+
+Vamos a cargar nuestro dataset.
+
+
+```{python}
+import pandas as pd 
+
+habits = pd.read_csv("/home/yamorza/Documentos/espacio_trabajo_intro_analisis_dat2/proyecto_modulo_6/src/habits.csv")
+habits.head(5)
+```
+
+Tenemos 4 variables categorícas: 
+- `gender`
+- `diet_quality`
+- `parental_education_level`
+- `internet_quality`
+
+Dos booleanas:
+- `extracurricular_participation`
+- `part_time_job`
+
+El resto de las variables son numéricas.
+La distribución por geńero del dataset es la siguiente:
+
+```{python}
+import pandas as pd
+import matplotlib.pyplot as plt
+
+
+gender_counts = habits['gender'].value_counts()
+
+colors = ['#2E8B57', '#FFD700', '#4682B4', '#FF8C00', '#8B4513', '#DC143C']
+
+plt.figure(figsize=(8, 8))
+wedges, texts, autotexts = plt.pie(
+    gender_counts.values, 
+    labels=gender_counts.index, 
+    autopct='%1.1f%%', 
+    startangle=90,
+    colors=colors[:len(gender_counts)],
+    shadow=True,
+    explode=[0.02] * len(gender_counts),
+    textprops={'fontsize': 12, 'fontweight': 'bold', 'color': '#333333'},
+    pctdistance=0.85
+)
+
+for autotext in autotexts:
+    autotext.set_color('white')
+    autotext.set_fontsize(12)
+    autotext.set_fontweight('bold')
+
+plt.title('Distribución por género del dataset.', 
+          fontsize=16, 
+          fontweight='bold',
+          color='#2E8B57',  # Chalkboard green for title
+          pad=20)
+
+plt.axis('equal')
+plt.tight_layout()
+
+```
+
+```{python}
+import pandas as pd
+from ydata_profiling import ProfileReport
+import json 
+profile = ProfileReport(habits, title="Habits EDA")
+
+
+
+```
+
+```{python}
+correlation_matrix = profile.to_json()
+correlation_matrix = json.loads(correlation_matrix)
+correlation_matrix = correlation_matrix["correlations"]
+correlation_matrix
+```
+
+```{python}
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+import numpy as np
+
+lista_correlaciones = correlation_matrix['auto']
+
+nombres_variables = list(lista_correlaciones[0].keys())
+
+matriz = []
+for fila in lista_correlaciones:
+    matriz.append([fila[var] for var in nombres_variables])
+
+correlaciones_df = pd.DataFrame(matriz, index=nombres_variables, columns=nombres_variables)
+
+plt.figure(figsize=(14, 12))
+
+mask = np.triu(np.ones_like(correlaciones_df, dtype=bool))
+
+sns.heatmap(
+    correlaciones_df,
+    mask=mask,
+    annot=True,
+    fmt='.2f',
+    cmap='RdYlGn',
+    center=0,
+    square=True,
+    linewidths=0.5,
+    cbar_kws={"shrink": 0.8, "label": "Coeficiente de Correlación"},
+    annot_kws={'size': 9},
+    vmin=-1,
+    vmax=1
+)
+
+plt.title('Matriz de Correlación de Hábitos Estudiantiles', 
+          fontsize=16, 
+          fontweight='bold',
+          pad=20)
+
+plt.xticks(rotation=45, ha='right', fontsize=10)
+plt.yticks(rotation=0, fontsize=10)
+
+plt.tight_layout()
+plt.show()
+
+print("\nCorrelaciones con exam_score:")
+print(correlaciones_df['exam_score'].sort_values(ascending=False))
+
+```
+
+Notamos lo siguiente:
+- La correlación más alta es la de `exam_score` con `study_hours_per_day` con `0.81`. 
+- La segunda correlación más alta es la de `exam_score` con `mental_health_rating` con `0.32`.
+- Hay correlaciones negativas entre `exam_score` con `netflix_hours` y `social_media_hours` respectivamente. Ambas del `0.17`
+
+De esto podemos intuir que estudiar más horas al día y tener buena salud mental tiene un efecto positivo sobre las notas del examen. También que tener pobres hábitos respecto al uso de desmedido de redes sociales tiene un efecto negativo sobre dichas notas.
+A continuación, graficaremos la relación entre `study_hours_per_day` con `exam_score` 
+
+```{python}
+import pandas as pd
+import matplotlib.pyplot as plt
+import numpy as np
+from scipy import stats
+
+colores_genero = {
+    'Female': '#2E8B57',
+    'Male': '#FFD700',
+    'Other': '#4682B4'
+}
+
+plt.figure(figsize=(10, 8))
+
+for genero, color in colores_genero.items():
+    subset = habits[habits['gender'] == genero]
+    plt.scatter(subset['study_hours_per_day'], subset['exam_score'], 
+                alpha=0.6, s=50, c=color, edgecolors='black', linewidth=0.5, 
+                label=f'{genero}')
+
+x = habits['study_hours_per_day']
+y = habits['exam_score']
+slope, intercept, r_value, p_value, std_err = stats.linregress(x, y)
+r_squared = r_value ** 2
+
+x_line = np.linspace(x.min(), x.max(), 100)
+y_line = slope * x_line + intercept
+plt.plot(x_line, y_line, color='#8B4513', linewidth=2.5, linestyle='--', 
+         label=f'Regresión general (r² = {r_squared:.3f})')
+
+plt.xlabel('Horas de Estudio por Día', fontsize=12, fontweight='bold', color='#2E8B57')
+plt.ylabel('Calificación en Examen', fontsize=12, fontweight='bold', color='#2E8B57')
+plt.title('Relación entre Horas de Estudio y Calificación por Género\nHábitos Estudiantiles', 
+          fontsize=14, fontweight='bold', color='#2E8B57', pad=20)
+
+plt.grid(True, alpha=0.3, linestyle='--', color='#8B4513')
+plt.legend(loc='lower right', fontsize=11, framealpha=0.9, edgecolor='#2E8B57')
+
+plt.text(0.05, 0.95, f'Ecuación: y = {slope:.3f}x + {intercept:.3f}\nR² = {r_squared:.3f}\np-valor = {p_value:.4f}', 
+         transform=plt.gca().transAxes, fontsize=10, 
+         bbox=dict(boxstyle="round,pad=0.5", facecolor='#FFF8DC', edgecolor='#2E8B57', alpha=0.9),
+         verticalalignment='top')
+
+plt.tight_layout()
+plt.show()
+```
+
+Ahora, graficaremos la relación entre las variables categóricas con el resultado del examen:
+
+```{python}
+import pandas as pd
+import matplotlib.pyplot as plt
+import numpy as np
+
+categorical_columns = ['gender', 'part_time_job', 'extracurricular_participation', 'parental_education_level', 'diet_quality','internet_quality']
+
+fig, axes = plt.subplots(2, 3, figsize=(15, 10))
+axes = axes.flatten()
+
+colores_escolares = ['#2E8B57', '#FFD700', '#4682B4', '#FF8C00', '#8B4513']
+
+for idx, col in enumerate(categorical_columns):
+    if idx < len(axes):
+        media = habits.groupby(col)['exam_score'].mean().sort_values(ascending=False)
+        error = habits.groupby(col)['exam_score'].sem()
+        
+        bars = axes[idx].bar(media.index, media.values, 
+                            color=colores_escolares[:len(media)], 
+                            edgecolor='#1a5a3a', linewidth=1.5,
+                            yerr=error.values, capsize=5, alpha=0.8)
+        
+        axes[idx].set_title(col.replace('_', ' ').title(), fontsize=12, fontweight='bold', color='#2E8B57')
+        axes[idx].set_xlabel('Categoría', fontsize=10, color='#2E8B57')
+        axes[idx].set_ylabel('Calificación Promedio', fontsize=10, color='#2E8B57')
+        axes[idx].grid(True, alpha=0.3, linestyle='--', color='#8B4513')
+        axes[idx].tick_params(axis='x', rotation=45, labelsize=9)
+        
+        for bar in bars:
+            height = bar.get_height()
+            axes[idx].text(bar.get_x() + bar.get_width()/2., height + 0.5,
+                          f'{height:.1f}', ha='center', va='bottom', fontsize=9, fontweight='bold')
+
+for idx in range(len(categorical_columns), len(axes)):
+    axes[idx].set_visible(False)
+
+plt.suptitle('Calificación Promedio por Categoría\nHábitos Estudiantiles', 
+             fontsize=16, fontweight='bold', color='#2E8B57', y=1.02)
+
+plt.tight_layout()
+plt.show()
+```
+
+Podemos notar, que parece no tener mucha incidencia en la variable `exam_score`. Lo cual coincide con lo mencionado arriba respecto a las correlaciones.
+
