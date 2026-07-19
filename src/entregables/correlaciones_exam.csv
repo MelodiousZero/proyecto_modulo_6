@@ -1,0 +1,15 @@
+Variable,Correlación
+study_hours_per_day,0.8120778924640847
+mental_health_rating,0.3233638378921464
+exercise_frequency,0.15020520061218906
+sleep_hours,0.12339572915759879
+attendance_percentage,0.09389846415147456
+parental_education_level,0.06092204998022439
+diet_quality,0.055098731050858205
+internet_quality,0.044774944677839046
+extracurricular_participation,0.0
+gender,0.0
+part_time_job,0.0
+age,-0.010017075621785774
+netflix_hours,-0.16519502709416956
+social_media_hours,-0.16625890575278035

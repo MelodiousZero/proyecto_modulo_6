@@ -1,0 +1,394 @@
+---
+title: "Reducción de dimensión: PC - Proyecto modulo 6"
+author: "Eumir Rendon, Raúl Llamosas, etc"
+date: "2026-06-23"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+
+```{r}
+
+
+library(MASS)
+library(ggplot2)
+library(dbscan)
+library(GGally)
+library(tidyverse)
+library(clusterSim)
+library(purrr)
+library(clValid)
+library(tidymodels)
+library(tidyverse)
+library(tidyclust)
+library(cluster)
+library(factoextra)
+library(FactoMineR)
+library(ClusterR)
+
+tidymodels_prefer()
+
+df<-read.csv("/home/yamorza/Documentos/espacio_trabajo_intro_analisis_dat2/proyecto_modulo_6/src/habits.csv")
+
+df %>% dim()
+
+df %>% glimpse()
+
+df %>% head()
+```
+
+
+```{r}
+library(dplyr)
+
+df_encoded <- df %>%
+  mutate(
+    # Binary: Male = 0, Female = 1
+    part_time_job = ifelse(part_time_job== "No",1,0),
+    extracurricular_participation = ifelse(extracurricular_participation== "Yes",1,0),
+
+    gender = ifelse(gender == "Male", 0, 1),
+    
+    # Ordinal: poor = 0, average = 1, good = 2
+    internet_quality = case_when(
+      internet_quality == "Poor" ~ 0,
+      internet_quality == "Average" ~ 1,
+      internet_quality == "Good" ~ 2
+    ),
+    
+    # Same ordinal encoding
+    diet_quality = case_when(
+      diet_quality == "Poor" ~ 0,
+      diet_quality == "Fair" ~ 1,
+      diet_quality == "Good" ~ 2
+    ),
+    
+    # Ordinal: None = 0, High School = 1, Bachelor = 2, Master = 3
+    parental_education_level = case_when(
+      parental_education_level == "None" ~ 0,
+      parental_education_level == "High School" ~ 1,
+      parental_education_level == "Bachelor" ~ 2,
+      parental_education_level == "Master" ~ 3
+    )
+  )
+```
+
+
+```{r}
+set.seed(123) 
+C1 <- mvrnorm(
+  n = 100, 
+  mu = c(10, 20), 
+  Sigma = matrix(c(1, 0, 0, 1), 
+                 ncol = 2)
+  )
+
+plot(C1[,1],C1[,2])
+```
+
+```{r}
+ 
+C2 <- mvrnorm(
+  n = 100, 
+  mu = c(20, 5), 
+  Sigma = matrix(c(1, 0, 0, 1), 
+                 ncol = 2)
+  )
+
+plot(C2[,1],C2[,2])
+```
+
+```{r}
+C3 <- mvrnorm(
+  n = 100, 
+  mu = c(-5, 1), 
+  Sigma = matrix(c(1, 0, 0, 1), 
+                 ncol = 2)
+  )
+
+plot(C3[,1],C3[,2])
+```
+
+```{r}
+C4 <- mvrnorm(
+  n = 100, 
+  mu = c(5, 7), 
+  Sigma = matrix(c(1, 0, 0, 1), 
+                 ncol = 2)
+  )
+plot(C4[,1],C4[,2])
+```
+
+```{r}
+
+
+datos<-data.frame(x=c(C1[,1],C2[,1],C3[,1],C4[,1]),y=c(C1[,2],C2[,2],C3[,2],C4[,2]),id=rep(seq(1:4),each=100))
+datos
+
+plot(datos$x,datos$y)
+
+ggplot(datos,aes(x,y,col=factor(id)))+geom_point()
+
+###Clusters
+
+
+dist_datos <- dist(scale(datos[,1:2]), method = "euclidean")
+
+hc_ave <- hclust(dist_datos, method = "average")
+hc_single<-hclust(dist_datos, method = "single")
+hc_comp<-hclust(dist_datos, method = "complete")
+hc_ward<-hclust(dist_datos, method = "ward.D")
+hc_ward2<-hclust(dist_datos, method = "ward.D2")
+
+###Distancia cophenetic
+
+d_ave <- cophenetic(hc_ave)
+d_single <- cophenetic(hc_single)
+d_comp<- cophenetic(hc_comp)
+d_ward<- cophenetic(hc_ward)
+d_ward2<-cophenetic(hc_ward2)
+
+cbind(cor(dist_datos,d_ave),cor(dist_datos,d_single),cor(dist_datos,d_comp),cor(dist_datos,d_ward),cor(dist_datos,d_ward2))
+
+plot(hc_ave)
+abline(h=0.5,lty=3,col="red")
+
+fviz_dend(hc_ave, cex = 0.65, k = 4, color_labels_by_k = FALSE, rect = TRUE, rect_fill = TRUE, k_colors = "jco", rect_border = "jco", show_labels = F, main="Cluster: Liga promedio dendrograma (4 grupos)")
+```
+
+```{r}
+###tidymodels
+
+hclust_spec <- hier_clust() %>%
+               set_engine("stats")
+
+hclust_fit <- tidyclust::fit(hclust_spec, ~., datos[,1:2])
+
+hclust_fit %>%
+  extract_centroids(num_clusters = 2)%>%print(Inf)
+
+hclust_fit$fit %>% plot()
+```
+###La alternativa K-means
+
+###Exploracion del numero de grupos (kMedias)
+```{r}
+ggpairs(datos[,1:2],
+upper = list(continuous = "density"),
+lower = list(continuous = wrap("points", size = 0.5)),
+diag = list(continuous = "densityDiag")) +
+theme_bw()
+
+fviz_nbclust(datos[,1:2], kmeans, method = "wss")+labs(x ="Número de clusters")+labs(y="Total suma de cuadrados intra clusters")+labs(title = "Número óptimo de clusters")
+
+opt<-Optimal_Clusters_KMeans(datos[,1:2], max_clusters=10,plot_clusters = TRUE,criterion="WCSSE")
+
+fviz_nbclust(datos[,1:2], kmeans, method = "silhouette")+labs(x ="Número de clusters")+labs(y="Promedio de silueta")+labs(title = "Número óptimo de clusters")
+
+opt1<-Optimal_Clusters_KMeans(datos[,1:2], max_clusters=10, plot_clusters = TRUE, criterion="silhouette")
+
+fviz_nbclust(datos[,1:2], kmeans, method = "gap_stat")+labs(x ="Número de clusters")+labs(y="GAP")+labs(title = "Número óptimo de clusters")
+```
+###dbscan
+
+```{r}
+
+datos<-scale(datos)
+
+kNNdistplot(datos, k =10) ###Ubicar el intervalo
+
+kNNdistplot(datos, k =10)
+abline(h=c(0.10,0.18),lty=2,col="blue")
+
+set.seed(123)
+quantile(kNNdist(datos ,k = 10), c(0.70,0.75, 0.8, 0.9, 0.95, 0.99, 0.995, 0.999))
+
+df_clus <- dbscan(datos, eps = 0.17, minPts = 10)
+
+df_clus 
+
+names(df_clus)
+
+df_db <- datos %>%
+    dbscan(eps = 0.17, minPts = 10)
+
+tidy(df_db)
+
+augment(df_db, datos) %>%
+    ggplot(aes(x = x, y = y)) + geom_point(aes(color = .cluster,
+    shape = noise)) + scale_shape_manual(values = c(19, 4))
+```
+###OPTICS
+```{r}
+datosOptics <- optics(datos, minPts = 10)
+plot(datosOptics)
+
+names(datosOptics)
+
+plot(datosOptics, col = datosOptics$cluster)
+
+
+db_tidy <- datos %>%
+    dbscan(eps = 0.3, minPts = 10)
+
+tidy(db_tidy)
+
+augment(db_tidy, datos) %>%
+    ggplot(aes(x = x, y = y)) + 
+    geom_point(aes(color = .cluster,shape = noise)) + 
+    scale_shape_manual(values = c(19, 4))
+
+```
+
+### xi (ξ) es un hiperparámetro que determina la pendiente mínima (1 – ξ) necesaria para iniciar y finalizar los clusteres 
+###en el grafico de alcanzabilidad (reachiability)
+```{r}
+datosOpticsXi <- extractXi(datosOptics, xi = 0.1)
+plot(datosOpticsXi)
+
+###tuning xi
+
+cluster_metrics <- function(data, clusters, dist_matrix) {
+list(db = clusterSim::index.DB(data, clusters)$DB,
+G1 = clusterSim::index.G1(data, clusters),
+dunn = clValid::dunn(dist_matrix, clusters),
+clusters = length(unique(clusters))
+)
+}
+
+clust=extractXi(datosOptics,xi=0.1)
+
+clust
+
+plot(clust)
+```
+
+
+
+```{r}
+datos<-scale(datos)
+
+set.seed(123)
+
+datosBoot <- map(1:10, ~ {
+datos %>%
+as_tibble() %>%
+sample_n(size = nrow(.), replace = TRUE)
+})
+
+tune=purrr::map_df(datosBoot,function(boot){
+  
+  datosOptics=optics(boot,minPts = 10)
+  
+    map(seq(0.05,0.15,0.01),function(k){
+            
+      clust=extractXi(datosOptics,xi=k)
+      
+      cluster=as_tibble(clust$cluster)
+         
+      data_gathered=bind_cols(boot,cluster)
+      
+      distance=dist(dplyr::select(data_gathered,-value))
+           
+      measure=cluster_metrics(data=dplyr::select(data_gathered,-value),clusters = data_gathered$value,dist_matrix = distance)
+    
+      measure=as_tibble(measure)
+  })  
+      
+  })
+
+measure=bind_rows(tune) 
+
+measure
+
+plot=measure %>% 
+  gather(key = "variable",value = "value",-clusters)
+
+plot
+
+ggplot(plot) +
+ aes(x = clusters, y = value) +
+ geom_point(shape = "circle", size = 1.5, colour = "magenta") +
+  geom_line()+
+ theme_minimal() +
+ facet_wrap(vars(variable),scales = "free_y")
+```
+
+###El índice db captura la intuicion de que los clusters que estan (1) bien espaciados entre si y 
+###(2) son muy densos son probablemente un "buen" agrupamiento. Esto se debe a que la declaracion "max" 
+###de la medida selecciona repetidamente los valores donde el punto promedio esta mas alejado de su centroide y 
+###donde los centroides estan mas cerca entre si. A medida que el indice db se reduce, el agrupamiento se considera "mejor".
+
+###El indice dunn captura la misma idea que el indice db: mejora cuando los clusters estan bien espaciados y son densos. 
+###Pero el indice dunn aumenta a medida que mejora el rendimiento.
+
+###Lo que difiere es la forma en que se aborda este problema. Mientras que el indice db considera la dispersion y 
+###separacion de todos los clusteres, el índice dunn solo considera los peores casos en el agrupamiento: los clústeres que 
+###estan mas cerca entre si y el cluster mas disperso. Dependiendo de su aplicacion, el cambio en el objetivo puede introducir problemas inesperados.
+
+###Un valor más alto de G1 indica una mejor agrupación, porque significa que los puntos de datos están más dispersos entre los grupos que dentro de ellos.
+
+
+```{r}
+measure[which.min(measure$db),]
+
+measure[which.max(measure$dunn),]
+
+measure[which.max(measure$G1),]
+
+###HDBSCAN
+
+hdb <- hdbscan(datos, minPts = 10)
+
+names(hdb)
+
+datos_plot <- data.frame(datos, cluster = as.factor(hdb$cluster))
+
+ggplot(datos_plot, aes(x = x, y = y, color = cluster)) +
+  geom_point(size = 2) +
+  theme_minimal() +
+  labs(title = "HDBSCAN Clustering",
+       color = "Cluster") +
+  scale_color_viridis_d()
+
+hullplot(datos, hdb, main = "HDBSCAN")
+
+###Model Based Clustering
+
+###Explorando el numero de clusters
+
+library(mclust)
+
+set.seed(123)
+
+K <- 8
+models <- lapply(1:K, function(k) Mclust(datos[,-3], G = k))
+bic_values <- sapply(models, function(model) BIC(model))
+bic_values
+
+BIC <- mclustBIC(datos[,-3])
+plot(BIC)
+
+summary(BIC)
+
+set.seed(123)
+GMM_model <- Mclust(datos[,-3], G=4)
+summary(GMM_model, parameters = TRUE)
+
+plot(GMM_model, what = "classification",fillEllipses=TRUE)
+
+plot(GMM_model, what = "density", type = "hdr", points.cex = 0.5)
+
+set.seed(123)
+
+Clust_GMM<- MclustDR(GMM_model)
+summary(Clust_GMM)
+
+plot(Clust_GMM, what = "pairs")
+
+plot(Clust_GMM, what = "boundaries", ngrid = 200)
+```
+
+
+

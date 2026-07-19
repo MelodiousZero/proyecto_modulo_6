@@ -31,7 +31,7 @@ format:
               \definecolor{mytitlecolor}{HTML}{0b4166}
               % Títulos de sección en color
               \titleformat{\section}{\color{mytitlecolor}\normalfont\Large\bfseries}{\thesection}{1em}{}
-              <!-- \titleformat{\subsection}{\color{mytitlecolor}\normalfont\large\bfseries}{\thesubsection}{1em}{} -->
+              \titleformat{\subsection}{\color{mytitlecolor}\normalfont\large\bfseries}{\thesubsection}{1em}{}
               \titleformat{\subsubsection}{\color{mytitlecolor}\normalfont\normalsize\bfseries}{\thesubsubsection}{1em}{}
               % Índice coloreado
               \renewcommand{\cftsecfont}{\color{mytitlecolor}\bfseries}
@@ -51,25 +51,44 @@ params:
 
 # Introducción 
 
-Nustro proyecto consiste en usar técnicas de reducción de dimensión en el siguiente dataset: `habits.csv`, el cual es un dataset con información acerca de los hábitos de estudiantes, como lo pueden ser su consumo en horas de redes sociales, sus hábitos alimenticios, resultados de examen, etc. 
+Nuestro proyecto consiste en usar técnicas de reducción de dimensión en el siguiente dataset: `habits.csv`, el cual es un dataset con información acerca de los hábitos de estudiantes, como lo pueden ser su consumo en horas de redes sociales, sus hábitos alimenticios, resultados de examen, etc. La idea es intentar agrupar usando solamente sus hábitos y ver si estos tienen alguna incidencia sobre su calificación de examen. 
+Nuestra intuición nos dice que aquellos estudiantes con buenos hábitos deberían tener buenas notas.
 
-Todo nuestro código se encuentra en el [siguiente repositorio de GitHub](https://github.com/MelodiousZero/proyecto_modulo_6). También tenemos en la [siguiente liga ](https://github.com/MelodiousZero/proyecto_modulo_6) gráficos en 3D. 
+Todo nuestro código se encuentra en el [siguiente repositorio de GitHub](https://github.com/MelodiousZero/proyecto_modulo_6).
 
 # Estadística descriptiva
 
 
 
-Vamos a cargar nuestro dataset. A continuación mostraremos solo una parte de este para no saturar la página:
+Vamos a cargar nuestro dataset. A continuación mostraremos solo una parte de este para no saturar la página por lo que no incluye todas las columnas.
 
+```{r}
+#| echo: false
+#| message: false
+#| warning: false
+#| output: false
+library(reticulate)
+
+use_virtualenv("~/Documentos/espacio_trabajo_intro_analisis_dat2/proyecto_modulo_6/.ambiente_virtual_p6")
+```
 
 ```{python}
 #| echo: false
 #| message: false
 #| warning: false
-import pandas as pd 
+#| output: asis
+
+import pandas as pd
 
 habits = pd.read_csv("/home/yamorza/Documentos/espacio_trabajo_intro_analisis_dat2/proyecto_modulo_6/src/habits.csv")
-habits[["study_hours_per_day","social_media_hours","netflix_hours","mental_health_rating","exam_score"]].head(5)
+
+df_subset = habits[["study_hours_per_day","social_media_hours","netflix_hours","mental_health_rating","exam_score"]].head(5)
+
+# Renombrar
+df_subset.columns = ["Horas de Estudio", "Redes Sociales", "Netflix", " Salud Mental", "Resultado Examen"]
+
+# Tabla markdown con alineación
+print(df_subset.to_markdown(index=False, tablefmt="github"))
 ```
 
 Tenemos 4 variables categorícas: 
@@ -92,6 +111,8 @@ La distribución por geńero del dataset es la siguiente:
 #| message: false
 #| warning: false
 #| fig-align: center
+#| results: hide
+
 
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -110,7 +131,7 @@ wedges, texts, autotexts = plt.pie(
     colors=colors[:len(gender_counts)],
     shadow=True,
     explode=[0.02] * len(gender_counts),
-    textprops={'fontsize': 3, 'fontweight': 'bold', 'color': '#333333'},
+    textprops={'fontsize': 6, 'fontweight': 'bold', 'color': '#333333'},
     pctdistance=0.85
 )
 
@@ -120,7 +141,7 @@ for autotext in autotexts:
     autotext.set_fontweight('bold')
 
 plt.title('Distribución por género del dataset.', 
-          fontsize=4, 
+          fontsize=9, 
           fontweight='bold',
           color='#2E8B57',  # Chalkboard green for title
           pad=20)
@@ -147,6 +168,8 @@ profile = ProfileReport(habits, title="Habits EDA")
 ```{python}
 #| echo: false
 #| output: false
+
+
 correlation_matrix = profile.to_json()
 correlation_matrix = json.loads(correlation_matrix)
 correlation_matrix = correlation_matrix["correlations"]
@@ -157,6 +180,10 @@ Y la matriz de correlación es la siguiente:
 
 ```{python}
 #| echo: false
+#| message: false
+#| warning: false
+#| results: hide
+
 
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -207,12 +234,6 @@ plt.show()
 
 ```
 
-
-```{python}
-#| echo: false
-print("\nCorrelaciones con exam_score:")
-print(correlaciones_df['exam_score'].tail(5).sort_values(ascending=False))
-```
 
 Notamos lo siguiente:
 
@@ -278,6 +299,9 @@ Ahora, graficaremos la relación entre las variables categóricas con el resulta
 ```{python}
 #| echo: false
 #| fig-align: center
+#| fig-height: 8
+#| fig-width: 16
+
 
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -285,7 +309,7 @@ import numpy as np
 
 categorical_columns = ['gender', 'part_time_job', 'extracurricular_participation', 'parental_education_level', 'diet_quality','internet_quality']
 
-fig, axes = plt.subplots(2, 3, figsize=(15, 10))
+fig, axes = plt.subplots(2, 3, figsize=(14, 7.5))
 axes = axes.flatten()
 
 colores_escolares = ['#2E8B57', '#FFD700', '#4682B4', '#FF8C00', '#8B4513']
@@ -314,8 +338,7 @@ for idx, col in enumerate(categorical_columns):
 for idx in range(len(categorical_columns), len(axes)):
     axes[idx].set_visible(False)
 
-plt.suptitle('Calificación Promedio por Categoría\nHábitos Estudiantiles', 
-             fontsize=16, fontweight='bold', color='#2E8B57', y=1.02)
+
 
 plt.tight_layout()
 plt.show()
@@ -323,7 +346,11 @@ plt.show()
 
 Podemos notar, que parece no tener mucha incidencia en la variable `exam_score`. Lo cual coincide con lo mencionado arriba respecto a las correlaciones.
 
-# PC
+# Técnicas de reducción de dimensión
+
+\subsection{PC}
+\label{pc}
+
 
 
 ```{r}
@@ -416,8 +443,7 @@ De esta manera se le asigna a las variables categóricas un valor númerico, de 
 #| warning: false
 #| fig-align: center
 
-df_pca <- df_encoded %>%
-  select(-exam_score)
+df_pca <- df_encoded %>% select(-exam_score)
 
 receta_pca <- recipe(~ ., data = df_pca) %>%
   step_normalize(all_predictors())
@@ -536,6 +562,9 @@ Veamos la correlación entre las componentes y el resultado de examen.
 #| message: false
 #| warning: false
 #| fig-align: center
+#| results: hide
+
+
 correlaciones_pca <- scores_pca %>%
   summarise(
     PC1 = cor(PC1, exam_score),
@@ -595,13 +624,13 @@ ggplot(cargas_importantes, aes(x = Componente, y = Variable, fill = Carga)) +
 #| message: false
 #| warning: false
 #| fig-align: center
-
+#| fig-height: 10
+#| fig-width: 18
 
 cargas_top <- cargas_importantes %>%
   group_by(Componente) %>%
   slice_max(abs(Carga), n = 5) %>%
   ungroup()
-
 
 ggplot(cargas_top, aes(x = reorder(Variable, Carga), y = Carga, fill = Componente)) +
   geom_col() +
@@ -615,8 +644,10 @@ ggplot(cargas_top, aes(x = reorder(Variable, Carga), y = Carga, fill = Component
   theme(
     plot.title = element_text(color = "#2E8B57", face = "bold", size = 5),
     legend.position = "none",
-    axis.text.y = element_text(size = 4), 
-    strip.text = element_text(size = 5, face = "bold")  
+    axis.text.y = element_text(size = 3), 
+    axis.text.x = element_text(size = 3),
+    strip.text = element_text(size = 4, face = "bold"),
+    axis.title = element_text(size = 4)
   )
 ```
 
@@ -625,7 +656,8 @@ Estos primeros resultados parecen indicar que si excluimos `exam_score` de nuest
 
 
 
-# t-SNE
+\subsection{t-SNE}
+\label{t-SNE}
 
 
 
@@ -680,8 +712,7 @@ df<-read.csv("/home/yamorza/Documentos/espacio_trabajo_intro_analisis_dat2/proye
 #| message: false
 #| warning: false
 #| fig-align: center
-df_sin_categoricas <- df %>%
-  select(-exam_score)
+df_sin_categoricas <- df #%>% select(-exam_score)
 ```
 
 ```{r}
@@ -729,7 +760,10 @@ Al ejecutar el siguiente bloque de código ya habríamos de haber codificado el 
 #| echo: True
 #| message: false
 #| warning: false
+#| results: hide
 #| fig-align: center
+
+
 set.seed(123)
 
 start.time <- proc.time()
@@ -768,6 +802,8 @@ Sin algun distintivo veremos que no existen grupos definidos cuando no declaramo
 #| message: false
 #| warning: false
 #| fig-align: center
+
+
 ggplot(datos_tsne, aes(x = tSNE1, y = tSNE2)) +
   geom_point(size = 1.8, alpha = 0.7, color = "#2E8B57") +
   labs(title = "t-SNE - Estudiantes por Hábitos") +
@@ -856,7 +892,7 @@ p1 <- ggplot(datos_tsne_3grupos,
   ) +
   theme_minimal() +
   theme(
-    plot.title = element_text(color = "#2E8B57", face = "bold", size = 10),
+    plot.title = element_text(color = "#2E8B57", face = "bold", size = 7),
     axis.title = element_text(color = "#4682B4", size = 8),
     axis.text = element_text(color = "#8B4513", size = 7),
     legend.position = "none"
@@ -877,7 +913,7 @@ p2 <- ggplot(datos_tsne_3grupos,
   ) +
   theme_minimal() +
   theme(
-    plot.title = element_text(color = "#2E8B57", face = "bold", size = 10),
+    plot.title = element_text(color = "#2E8B57", face = "bold", size = 7),
     axis.title = element_text(color = "#4682B4", size = 8),
     axis.text = element_text(color = "#8B4513", size = 7),
     legend.position = "none"
@@ -893,7 +929,7 @@ p1 + p2 +
   )
 
 ```
-Veremos que existen ligeros traslapes entre el como tsne hace una diferencia en los grupos, aunque se puede notar que es sigificativa, puede indicar que puede ser mejor que pca
+Veremos que existen ligeros traslapes entre el como tsne hace una diferencia en los grupos, aunque se puede notar que es significativa, puede indicar que puede ser mejor que pca
 
 
 ```{r}
@@ -901,6 +937,8 @@ Veremos que existen ligeros traslapes entre el como tsne hace una diferencia en 
 #| message: false
 #| warning: false
 #| fig-align: center
+
+
 datos_tsne_3grupos <- datos_tsne %>%
   mutate(exam_score_grupo = case_when(
     exam_score >= 80 ~ "Alto",
@@ -923,7 +961,7 @@ ggplot(datos_tsne_3grupos, aes(x = tSNE1, y = tSNE2, color = exam_score_grupo)) 
   ) +
   theme_minimal() +
   theme(
-    plot.title = element_text(color = "#2E8B57", face = "bold", size = 16),
+    plot.title = element_text(color = "#2E8B57", face = "bold", size = 13),
     axis.title = element_text(color = "#4682B4", size = 12),
     axis.text = element_text(color = "#8B4513", size = 10),
     legend.title = element_text(color = "#2E8B57", face = "bold", size = 11),
@@ -931,7 +969,7 @@ ggplot(datos_tsne_3grupos, aes(x = tSNE1, y = tSNE2, color = exam_score_grupo)) 
   )
 ```
 
-Esta grafica muestra de forma un poco mas clara nuestra separacion entre grupos sin allterar demasiado las dimensiones del grafico
+Esta gráfica muestra de forma un poco más clara nuestra separacion entre grupos sin allterar demasiado las dimensiones del grafico
 
 Debemos recordar que este algoritmo uso la primera version de tsne ahora pasaremos a demostrar el poderio de la libreria de rtsne
 
@@ -940,6 +978,8 @@ Debemos recordar que este algoritmo uso la primera version de tsne ahora pasarem
 #| message: false
 #| warning: false
 #| fig-align: center
+#| results: hide
+
 set.seed(123)
 
 start.time <- proc.time()
@@ -982,8 +1022,12 @@ datos_Rtsne_quantile <- datos_Rtsne %>%
 ```{r}
 #| echo: false
 #| message: false
+#| results: hide
 #| warning: false
 #| fig-align: center
+
+
+
 ggplot(datos_Rtsne_quantile,aes(x=Rtsne1,y=Rtsne2))+
 geom_point(size=1.1,color="darkred")+
 labs(title="WDBC: Rtsne")
@@ -1003,7 +1047,7 @@ ggplot(datos_Rtsne_quantile, aes(x = Rtsne1, y = Rtsne2, color = exam_score)) +
   ) +
   labs(title = "Rtsne - Estudiantes por Cuantil de Calificación") +
   theme_minimal() +
-  theme(plot.title = element_text(color = "#2E8B57", face = "bold", size = 14),
+  theme(plot.title = element_text(color = "#2E8B57", face = "bold", size = 10),
         axis.title = element_text(color = "#4682B4", size = 11),
         axis.text = element_text(color = "#8B4513", size = 9),
         legend.title = element_text(color = "#2E8B57", face = "bold", size = 10),
@@ -1075,7 +1119,7 @@ p1 + p2 +
   plot_annotation(
     title = "Distribución de Dimensiones Rtsne por Grupo de Calificación",
     theme = theme(
-      plot.title = element_text(color = "#2E8B57", face = "bold", size = 16, hjust = 0.5)
+      plot.title = element_text(color = "#2E8B57", face = "bold", size = 10, hjust = 0.5)
     )
   )
 ```
@@ -1110,7 +1154,7 @@ ggplot(datos_Rtsne_3grupos, aes(x = Rtsne1, y = Rtsne2, color = exam_score_grupo
   ) +
   theme_minimal() +
   theme(
-    plot.title = element_text(color = "#2E8B57", face = "bold", size = 16),
+    plot.title = element_text(color = "#2E8B57", face = "bold", size = 10),
     axis.title = element_text(color = "#4682B4", size = 12),
     axis.text = element_text(color = "#8B4513", size = 10),
     legend.title = element_text(color = "#2E8B57", face = "bold", size = 11),
@@ -1175,6 +1219,10 @@ d1 <- rbindlist(lapply(seq(nrow(tsne_params)), function(i) {
 #| warning: false
 #| fig-align: center
 #| output: false
+#| fig-height: 10
+#| fig-width: 18
+
+
 
 d1 <- d1 %>%
   mutate(group = case_when(
@@ -1293,6 +1341,9 @@ p2 <- ggplot(d2) +
 ```
 
 ```{r}
+#| fig-height: 10
+#| fig-width: 18
+
 print(p2)
 ```
 
@@ -1370,6 +1421,8 @@ p3 <- ggplot(d3) +
 ```
 
 ```{r}
+#| fig-height: 10
+#| fig-width: 18
 print(p3)
 
 ```
@@ -1380,7 +1433,8 @@ Conclusión, a pesar de que algunos gráficos muestran una separación prometedo
 
 
 
-# UMAP
+\subsection{UMAP}
+\label{UMAP}
 
 Vamos a hacerle la misma modificación al dataset con respecto a las variables categóricas. Después de esta moidifcación tenemos:
 
@@ -1461,8 +1515,7 @@ df_encoded <- df %>%
 #| message: false
 #| warning: false
 #| fig-align: center
-df_para_umap<- df_encoded %>%
-  select(-c(exam_score))
+df_para_umap<- df_encoded %>% select(-c(exam_score))
 
 
 df_umap <- df_para_umap %>%
@@ -1663,7 +1716,7 @@ ggplot(datos_umap, aes(x = UMAP1, y = UMAP2, color = group)) +
 ```
 
 
-
+Comparemos los distintos parámetros con los que corremos UMAP:
 
 
 

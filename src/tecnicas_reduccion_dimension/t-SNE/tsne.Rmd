@@ -50,11 +50,7 @@ df<-read.csv("/home/yamorza/Documentos/espacio_trabajo_intro_analisis_dat2/proye
 
 ```
 
-```{r}
-df_sin_categoricas <- df %>%
-  select(study_hours_per_day, mental_health_rating, exercise_frequency,
-         sleep_hours, attendance_percentage, netflix_hours, social_media_hours) 
-```
+
 
 ```{r}
 df_sin_categoricas <- df %>%
@@ -113,7 +109,7 @@ proc.time()-start.time
 datos_tsne <- data.frame(
   tSNE1 = df_tsne[,1],
   tSNE2 = df_tsne[,2],
-  exam_score = df$exam_score  
+  exam_score = df$social_media_hours  
 )
 
 datos_tsne_quantile <- datos_tsne %>%
@@ -245,14 +241,14 @@ proc.time()-start.time
 datos_Rtsne <- data.frame(
   Rtsne1 = df_Rtsne$Y[,1],
   Rtsne2 = df_Rtsne$Y[,2],
-  exam_score = df$exam_score
+  exam_score = df$mental_health_rating
 )
 
 datos_Rtsne_3grupos <- datos_Rtsne %>%
   mutate(exam_score_grupo = case_when(
-    exam_score >= 80 ~ "Alto",
-    exam_score >= 60 ~ "Medio",
-    exam_score < 60 ~ "Bajo"
+    exam_score >= 7 ~ "Alto",
+    exam_score >= 5 ~ "Medio",
+    exam_score < 5 ~ "Bajo"
   ))
 
 datos_Rtsne_quantile <- datos_Rtsne %>%

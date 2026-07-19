@@ -1,0 +1,1492 @@
+---
+title: |
+  \begin{center}
+  \includegraphics[width=0.4\textwidth]{banner-fciencias-color-dark.png}\\[2em]
+  Documento 2 - Técnicas de agrupamiento o clustering: Clusters por métodos aglomerativos y por método de k-means
+  \end{center}
+
+author: 
+  - Raúl Llamosas Alvarado
+  - Eumir Rendon Uresti
+  - Gabriela Peña Franco
+  - Daniela Ibarra Gatica
+  - Randy Jesús García Mejía
+  - Daniela Vázquez Sánchez
+
+
+format:
+    pdf:
+        fontsize: 8pt   
+        toc: true
+        toc-depth: 2
+        geometry: margin=1cm
+        fig-width: 4
+        fig-height: 3
+        code-block-bg: "C4CDD5"
+        include-in-header:
+          - text: |
+              \usepackage{graphicx}
+              \usepackage{titlesec}
+              \usepackage{tocloft}
+              \definecolor{mytitlecolor}{HTML}{0b4166}
+              % Títulos de sección en color
+              \titleformat{\section}{\color{mytitlecolor}\normalfont\Large\bfseries}{\thesection}{1em}{}
+              \titleformat{\subsection}{\color{mytitlecolor}\normalfont\large\bfseries}{\thesubsection}{1em}{}
+              \titleformat{\subsubsection}{\color{mytitlecolor}\normalfont\normalsize\bfseries}{\thesubsubsection}{1em}{}
+              % Índice coloreado
+              \renewcommand{\cftsecfont}{\color{mytitlecolor}\bfseries}
+              \renewcommand{\cftsubsecfont}{\color{mytitlecolor}\bfseries}
+
+self-contained: true
+toc: true
+toc-depth: 2
+jupyter: python3
+engine: knitr
+knitr:
+  opts_chunk:
+    echo: false
+params:
+  python_path: "~/Documentos/espacio_trabajo_intro_analisis_dat2/proyecto_modulo_6/.ambiente_virtual_p6/bin/python"
+---
+
+# Introducción
+
+Todo nuestro código se encuentra en el [siguiente repositorio de GitHub](https://github.com/MelodiousZero/proyecto_modulo_6).
+Esta es una continuación del proyecto, ahora relacionado con métodos de aglomeración (clustering) sobre el mismo conjunto de datos trabajado en la primera parte.
+
+# Métodos aglomerativos
+
+
+
+```{r}
+#| echo: false
+#| message: false
+#| warning: false
+#| fig-align: center
+#| output: false
+
+library(tidymodels)
+library(tidyverse)
+library(tidyclust)
+library(factoextra)
+library(FactoMineR)
+library(cluster)
+library(mlr)
+library(GGally)
+library(ClusterR)
+library(vegan)
+library(NbClust)
+library(gridExtra)
+library(grid)
+library(lattice)
+require(igraph)
+library(recipes)
+library(rsample)
+library(workflows)
+library(tune)
+library(parameters)
+library(pvclust)
+library(clustertend)
+library(hopkins)
+library(flextable)
+tidymodels_prefer()
+
+df<-read.csv("/home/yamorza/Documentos/espacio_trabajo_intro_analisis_dat2/proyecto_modulo_6/src/habits.csv")
+
+df %>% dim()
+
+df %>% glimpse()
+
+df %>% head()
+```
+
+De igual manera que en paso anterior, vamos a trabajar nuestras variables categóricas con codificación:
+```{r}
+
+#| echo: true
+#| message: false
+#| warning: false
+#| fig-align: center
+#| output: false
+
+
+library(dplyr)
+
+df_encoded <- df %>%
+  mutate(
+    # Binary: Male = 0, Female = 1
+    part_time_job = ifelse(part_time_job== "No",1,0),
+    extracurricular_participation = ifelse(extracurricular_participation== "Yes",1,0),
+
+    gender = ifelse(gender == "Male", 0, 1),
+    
+    # Ordinal: poor = 0, average = 1, good = 2
+    internet_quality = case_when(
+      internet_quality == "Poor" ~ 0,
+      internet_quality == "Average" ~ 1,
+      internet_quality == "Good" ~ 2
+    ),
+    
+    # Same ordinal encoding
+    diet_quality = case_when(
+      diet_quality == "Poor" ~ 0,
+      diet_quality == "Fair" ~ 1,
+      diet_quality == "Good" ~ 2
+    ),
+    
+    # Ordinal: None = 0, High School = 1, Bachelor = 2, Master = 3
+    parental_education_level = case_when(
+      parental_education_level == "None" ~ 0,
+      parental_education_level == "High School" ~ 1,
+      parental_education_level == "Bachelor" ~ 2,
+      parental_education_level == "Master" ~ 3
+    )
+  )
+```
+
+
+
+
+\subsection{Linkage}
+\label{Linkage}
+
+
+```{r}
+#| echo: false
+#| message: false
+#| warning: false
+#| fig-align: center
+#| output: false
+
+df1<- df_encoded %>% dplyr::select(-exam_score) %>% scale()
+df_encoded<- df_encoded %>% dplyr::select(-exam_score) %>% scale()
+
+summary(df1)
+
+head(df1)
+
+###Calculando distancias (distancia euclideana)
+
+dist_df <- dist(df1, method = "euclidean")
+
+hc_ave <- hclust(dist_df, method = "average")
+hc_single<-hclust(dist_df, method = "single")
+hc_comp<-hclust(dist_df, method = "complete")
+hc_ward<-hclust(dist_df, method = "ward.D")
+hc_ward2<-hclust(dist_df, method = "ward.D2")
+```
+
+Procedemos a calcular la distancia cophenetic:
+
+
+```{r}
+#| echo: false
+#| message: false
+#| warning: false
+#| fig-align: center
+#| output: false
+d_ave <- cophenetic(hc_ave)
+d_single <- cophenetic(hc_single)
+d_comp<- cophenetic(hc_comp)
+d_ward<- cophenetic(hc_ward)
+d_ward2<-cophenetic(hc_ward2)
+
+cbind(cor(dist_df,d_ave),cor(dist_df,d_single),cor(dist_df,d_comp),cor(dist_df,d_ward),cor(dist_df,d_ward2))
+```
+
+A continuación, el "linkage" promedio y completo:
+
+```{r}
+#| echo: false
+#| message: false
+#| warning: false
+#| fig-align: center
+#| fig-height: 10
+#| fig-width: 18
+
+
+par(mfrow = c(1, 2), mar = c(5, 5, 6, 5))
+
+plot(hc_ave, main = "Average Linkage", 
+     cex = 1.4, hang = -1,
+     xlab = "", ylab = "Distancia", 
+     sub = "", col = "#2E8B57")
+rect.hclust(hc_ave, k = 3, border = "#2E8B57")
+
+plot(hc_comp, main = "Complete Linkage", 
+     cex = 1.4, hang = -1,
+     xlab = "", ylab = "Distancia", 
+     sub = "", col = "#DC143C")
+rect.hclust(hc_comp, k = 3, border = "#DC143C")
+
+par(mfrow = c(1, 1))
+```
+
+Ahora, calculamos la ward:
+
+```{r}
+#| echo: false
+#| message: false
+#| warning: false
+#| fig-align: center
+#| fig-height: 10
+#| fig-width: 18
+
+
+library(hopkins)
+
+par(mfrow = c(1, 2), mar = c(5, 5, 6, 5))
+
+plot(hc_ward, main = "Ward Linkage", 
+     cex = 1.2, hang = -1,
+     xlab = "", ylab = "Distancia", 
+     sub = "", col = "#4682B4")
+abline(h = 100, lty = 3, col = "#DC143C", lwd = 2)
+rect.hclust(hc_ward, k = 2, border = "#4682B4")
+
+plot(hc_ward2, main = "Ward2 Linkage", 
+     cex = 1.2, hang = -1,
+     xlab = "", ylab = "Distancia", 
+     sub = "", col = "#FFD700")
+abline(h = 30, lty = 3, col = "#DC143C", lwd = 2)
+rect.hclust(hc_ward2, k = 2, border = "#FFD700")
+
+par(mfrow = c(1, 1))
+```
+Notamos que si cortamos Ward en 100 tenemos tres agrupaciones, de igual manera si cortas Ward 2 en 30 tenemos tres agrupaciones.
+
+Ahora, para single:
+
+```{r}
+#| echo: false
+#| message: false
+#| warning: false
+#| fig-align: center
+#| fig-height: 10
+#| fig-width: 18
+
+
+par(mar = c(5, 5, 6, 5))
+
+plot(hc_ward2, main = "Ward2 Linkage", 
+     cex = 1.2, hang = -1,
+     xlab = "", ylab = "Distancia", 
+     sub = "", col = "#FFD700")
+abline(h = 27, lty = 3, col = "#DC143C", lwd = 2)
+rect.hclust(hc_ward2, k = 2, border = "#FFD700")
+
+par(mar = c(5, 4, 4, 2) + 0.1)
+
+
+
+```
+
+Cortamos en 27, y tenemos tres agrupaciones. 
+
+\subsection{Hopkins}
+\label{Hopkins}
+
+
+Ahora, usaremos la estadística de Hopkins para saber si hay alguna tendencia para agruparse en clusteras:
+```{r}
+#| echo: true
+#| message: false
+#| warning: false
+#| fig-align: center
+library(hopkins)
+
+set.seed(123)
+Hopkins_tend <- factoextra::get_clust_tendency(
+  df_encoded, n = nrow(df_encoded) - 1,
+  gradient = list(low = "steelblue", high = "white")
+)
+cat("Hopkins statistic:", round(Hopkins_tend$hopkins_stat, 3), "\n")
+```
+
+```{r}
+#| echo: true
+#| message: false
+#| warning: false
+#| fig-align: center
+cat("Interpretación:",
+    ifelse(Hopkins_tend$hopkins_stat > 0.7, "Los datos presentan una tendencia a agruparse en clusteras (H > 0.7)",
+    ifelse(Hopkins_tend$hopkins_stat > 0.5, "Existe alguna tendencia al agrupamiento en los datos (H > 0.5)",
+           "Los datos presentan una distribución espacial uniforme: La agrupación sería cuestionable")), "\n")
+```
+
+```{r}
+#| echo: true
+#| message: false
+#| warning: false
+#| fig-align: center
+
+
+set.seed(123)
+hopkins::hopkins(df_encoded)
+```
+
+Resultado de 0.989, por lo que sí se agrupan en clusteras. No obstante, es anormalmente alto. Necesitaremos más pruebas.
+
+
+\subsection{Método Silueta}
+\label{Método Silueta}
+
+Vamos a usar ahora la métrica conocida como coeficiente de silueta. Con esta métrica mediremos la similitud de una observación con su propio cluster en comparación con otros clusteres.
+
+
+```{r}
+#| echo: false
+#| message: false
+#| warning: false
+#| results: hide
+#| fig-align: center
+
+tune_spec <- hier_clust(num_clusters = tune(),linkage_method = "ward.D2") %>% 
+  set_engine("stats")
+
+cluster_grid <- tibble(num_clusters = 2:10)
+
+set.seed(123)
+tune_results <- tune_cluster(
+  tune_spec,
+  ~ .,
+  data = as.data.frame(df1),
+  resamples = vfold_cv(as.data.frame(df1), v = 10),
+  grid = cluster_grid,
+  metrics = cluster_metric_set(silhouette_avg)
+)
+
+show_best(tune_results, metric = "silhouette_avg")
+
+metrics_df <- collect_metrics(tune_results)
+
+p <- ggplot(metrics_df, aes(x = num_clusters, y = mean)) +
+  geom_line(color = "#2E8B57", size = 1) +
+  geom_point(color = "#DC143C", size = 3) +
+  # Add vertical line at x = 3
+  geom_vline(xintercept = 3, 
+             color = "#8B0000", 
+             linetype = "dashed", 
+             size = 0.8) +
+  # Optional: Add label for the line
+  annotate("text", 
+           x = 3, 
+           y = max(metrics_df$mean) * 0.95, 
+           label = "k = 3",
+           color = "#8B0000",
+           fontface = "bold",
+           hjust = -0.2) +
+  labs(
+    title = "Proceso tuning de cluster: Silhouette Method",
+    subtitle = "Evaluación de k = 1 to 10 con 5 folds",
+    x = "Número de Clusters (k)",
+    y = "Promedio Silhouette Score"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(color = "#2E8B57", face = "bold", size = 14),
+    plot.subtitle = element_text(color = "#4682B4", size = 10),
+    axis.title = element_text(color = "#4682B4", size = 11),
+    axis.text = element_text(color = "#8B4513", size = 9),
+    panel.grid = element_line(color = "gray90", size = 0.3)
+  )
+
+print(p)
+```
+A juzgar por el método silueta,habríamos de elegir tres clusters.
+
+Cortamos en tres clusters  por medio de un dendograma: 
+
+
+
+```{r}
+#| echo: false
+#| message: false
+#| warning: false
+#| results: hide
+#| fig-align: center
+#| fig-width: 14
+#| fig-height: 6
+
+library(gridExtra)
+library(factoextra)
+
+### Óptimo número de clusters: 2
+
+### Visualizar resultados
+
+# Define colors
+colors <- c("#2E8B57", "#DC143C", "#FFD700")  # Green, Red, Gold
+
+hc.cut <- hcut(df1, k = 3, hc_method = "ward.D2")
+
+# Dendrogram
+p1 <- fviz_dend(hc.cut, 
+          show_labels = FALSE, 
+          rect = TRUE,
+          rect_fill = TRUE,
+          rect_border = colors,
+          k_colors = colors,
+          main = "Dendrograma - Ward.D2",
+          sub = "k = 3 clusters") +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(color = "#2E8B57", face = "bold", size = 14),
+    plot.subtitle = element_text(color = "#FFD700", size = 10),
+    axis.title = element_text(color = "#2E8B57", size = 11),
+    axis.text = element_text(color = "#DC143C", size = 9),
+    panel.grid = element_line(color = "gray90", size = 0.3)
+  )
+
+# Silhouette plot
+p2 <- fviz_silhouette(hc.cut,
+                main = "Silhouette Plot - Ward.D2",
+                palette = colors,
+                ggtheme = theme_minimal()) +
+  theme(
+    plot.title = element_text(color = "#2E8B57", face = "bold", size = 14),
+    plot.subtitle = element_text(color = "#FFD700", size = 10),
+    axis.title = element_text(color = "#2E8B57", size = 11),
+    axis.text = element_text(color = "#DC143C", size = 9),
+    legend.text = element_text(color = "#2E8B57"),
+    legend.title = element_text(color = "#FFD700", face = "bold"),
+    panel.grid = element_line(color = "gray90", size = 0.3)
+  )
+
+# Arrange side by side
+grid.arrange(p1, p2, ncol = 2)
+
+```
+
+\subsection{Dendogramas circulares y filogenéticos}
+\label{Dendogramas circulares y filogenéticos}
+
+```{r}
+
+#| echo: false
+#| message: false
+#| warning: false
+#| results: hide
+#| fig-align: center
+
+# Define colors
+green <- "#2E8B57"
+red <- "#DC143C"
+gold <- "#FFD700"
+
+# Dendrogram - Circular type
+fviz_dend(hc_ward, 
+          cex = 0.8, 
+          k = 3,
+          k_colors = c(green, gold,red),
+          type = "circular",
+          main = "Dendrograma Circular - k=3",
+          sub = "Ward.D2") +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(color = green, face = "bold", size = 14),
+    plot.subtitle = element_text(color = gold, size = 10),
+    axis.title = element_text(color = green, size = 11),
+    axis.text = element_text(color = red, size = 9)
+  )
+
+# Dendrogram - Phylogenic type with k=3
+fviz_dend(hc_ward, 
+          cex = 0.8, 
+          k = 3,
+          k_colors = c(green, red, gold),
+          type = "phylogenic",
+          main = "Dendrograma Filogenético - k=3",
+          sub = "Ward.D2") +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(color = green, face = "bold", size = 14),
+    plot.subtitle = element_text(color = gold, size = 10),
+    axis.title = element_text(color = green, size = 11),
+    axis.text = element_text(color = red, size = 9)
+  )
+
+```
+
+
+
+No obtenemos agrupaciones satisfactorias. Lo cual coincide con lo dicho con el documento 1 de técnicas de reducción de dimensión. Pasaremos ahora a visualización por silueta:
+
+\subsection{Otros Métodos (Gap, Codo, Silueta)}
+\label{Otros Métodos (Gap, Codo, Silueta}
+
+```{r}
+#| echo: false
+#| message: false
+#| warning: false
+#| fig-align: center
+#| results: hide
+#| fig-width: 14
+#| fig-height: 12
+
+library(tidyclust)
+library(gridExtra)
+library(ggplot2)
+library(dplyr)
+
+# Define school colors
+green <- "#2E8B57"
+red <- "#DC143C"
+gold <- "#FFD700"
+
+set.seed(123)
+
+### Mas tecnicas para determinar el numero de clusters subyacente a estos datos
+
+set.seed(123)
+
+nc <- n_clusters(
+  as.data.frame(df1),
+  standardize = TRUE,
+  include_factors = FALSE,
+  package = c("easystats", "NbClust", "mclust"),
+  fast = TRUE,
+  hclust_method = "ward.D2",
+  n_max = 10
+)
+
+# Convert plots to ggplot objects for grid arrangement
+p1 <- plot(nc) +
+  labs(title = "n_clusters: Multiple Methods") +
+  theme(
+    plot.title = element_text(color = green, face = "bold", size = 12),
+    axis.title = element_text(color = green, size = 10),
+    axis.text = element_text(color = red, size = 8),
+    legend.text = element_text(color = green),
+    legend.title = element_text(color = gold, face = "bold")
+  )
+
+###
+
+set.seed(123)
+
+elbow <- n_clusters_elbow(
+  as.data.frame(df_encoded),
+  standardize = TRUE,
+  include_factors = FALSE,
+  clustering_function = stats::kmeans,
+  n_max = 10
+)
+
+p2 <- plot(elbow) +
+  labs(title = "Elbow Method") +
+  theme(
+    plot.title = element_text(color = green, face = "bold", size = 12),
+    axis.title = element_text(color = green, size = 10),
+    axis.text = element_text(color = red, size = 8),
+    legend.text = element_text(color = green),
+    legend.title = element_text(color = gold, face = "bold")
+  )
+
+###
+
+set.seed(123)
+
+gap <- n_clusters_gap(
+  as.data.frame(df_encoded),
+  standardize = TRUE,
+  include_factors = FALSE,
+  clustering_function = stats::kmeans,
+  n_max = 10,
+  gap_method = "firstSEmax"
+)
+
+p3 <- plot(gap) +
+  labs(title = "Gap Statistic") +
+  theme(
+    plot.title = element_text(color = green, face = "bold", size = 12),
+    axis.title = element_text(color = green, size = 10),
+    axis.text = element_text(color = red, size = 8),
+    legend.text = element_text(color = green),
+    legend.title = element_text(color = gold, face = "bold")
+  )
+
+###
+
+set.seed(123)
+
+si <- n_clusters_silhouette(
+  as.data.frame(df_encoded),
+  standardize = TRUE,
+  include_factors = FALSE,
+  clustering_function = stats::kmeans,
+  n_max = 10
+)
+
+p4 <- plot(si) +
+  labs(title = "Silhouette Method") +
+  theme(
+    plot.title = element_text(color = green, face = "bold", size = 12),
+    axis.title = element_text(color = green, size = 10),
+    axis.text = element_text(color = red, size = 8),
+    legend.text = element_text(color = green),
+    legend.title = element_text(color = gold, face = "bold")
+  )
+
+# Arrange in 2x2 grid
+grid.arrange(p1, p2, p3, p4, ncol = 2,
+             top = textGrob("Métodos para Determinar el Número Óptimo de Clusters", 
+                            gp = gpar(col = green, fontface = "bold", fontsize = 16)))
+
+###
+```
+
+Podemos notar, que no hay un patrón consistente para afirmar un número adecuado de clusters. Esto va acorde a las observaciones del primer documento. Nuestro conjunto de datos parece no acomodarse en clusters de forma natural.
+
+
+
+```{r}
+#| echo: false
+#| message: false
+#| warning: false
+#| fig-align: center
+#| results: hide
+#| fig-width: 14
+#| fig-height: 12
+set.seed(123)
+
+dbscan <- n_clusters_dbscan(
+  as.data.frame(df_encoded),
+  standardize = TRUE,
+  include_factors = FALSE,
+  method = c("kNN", "SS"),
+  min_size = 0.1,
+  eps_n = 50,
+  eps_range = c(0.1, 3)
+)
+
+# If you want to include DBSCAN in the grid, you'd need to add it as a 5th plot
+# Or create a second grid
+
+###
+
+set.seed(123)
+
+hclust <- n_clusters_hclust(
+  as.data.frame(df_encoded),
+  standardize = TRUE,
+  include_factors = FALSE,
+  distance_method = "euclidean",
+  hclust_method = "ward.D2",
+  ci = 0.95,
+  iterations = 25
+)
+
+### Casi todas estas estadísticas apuntan a que en estos datos subyacen 2 cluster
+
+### Predicción
+
+hclust_spec1 <- hier_clust(num_clusters = 2, linkage_method = "ward.D2") %>%
+                set_engine("stats")
+
+hclust_final <- fit(hclust_spec1, ~., data = as.data.frame(scale(df_encoded[1:500,])))
+
+# Plot the dendrogram
+dendro_plot <- plot(hclust_final$fit) +
+  labs(title = "Dendrograma - Ward.D2 (k=2)") +
+  theme(
+    plot.title = element_text(color = green, face = "bold", size = 12),
+    axis.title = element_text(color = green, size = 10),
+    axis.text = element_text(color = red, size = 8)
+  )
+
+hc_summary <- hclust_final |> extract_fit_summary()
+
+hclust_final |> extract_centroids() |> print(Inf)
+
+hc_preds <- hclust_final |> predict(as.data.frame(scale(df_encoded[501:569,])))
+
+class <- df$exam_score[501:569]
+
+table(class, hc_preds$.pred_cluster)
+```
+
+
+\newpage
+
+# k-Means
+
+
+
+
+```{r}
+#| echo: false
+#| message: false
+#| warning: false
+#| fig-align: center
+#| results: hide
+
+
+library(tidymodels)
+library(tidyverse)
+library(tidyclust)
+library(factoextra)
+library(FactoMineR)
+library(cluster)
+library(mlr)
+library(GGally)
+library(ClusterR)
+library(vegan)
+library(NbClust)
+library(gridExtra)
+library(grid)
+library(lattice)
+require(igraph)
+library(recipes)
+library(rsample)
+library(workflows)
+library(tune)
+library(parameters)
+library(pvclust)
+library(clustertend)
+library(hopkins)
+library(flextable)
+tidymodels_prefer()
+
+df<-read.csv("/home/yamorza/Documentos/espacio_trabajo_intro_analisis_dat2/proyecto_modulo_6/src/habits.csv")
+
+df %>% dim()
+
+df %>% glimpse()
+
+df %>% head()
+```
+
+
+```{r}
+#| echo: false
+#| message: false
+#| warning: false
+#| fig-align: center
+#| results: hide
+
+library(dplyr)
+
+df_encoded <- df %>%
+  mutate(
+    # Binary: Male = 0, Female = 1
+    part_time_job = ifelse(part_time_job== "No",1,0),
+    extracurricular_participation = ifelse(extracurricular_participation== "Yes",1,0),
+
+    gender = ifelse(gender == "Male", 0, 1),
+    
+    # Ordinal: poor = 0, average = 1, good = 2
+    internet_quality = case_when(
+      internet_quality == "Poor" ~ 0,
+      internet_quality == "Average" ~ 1,
+      internet_quality == "Good" ~ 2
+    ),
+    
+    # Same ordinal encoding
+    diet_quality = case_when(
+      diet_quality == "Poor" ~ 0,
+      diet_quality == "Fair" ~ 1,
+      diet_quality == "Good" ~ 2
+    ),
+    
+    # Ordinal: None = 0, High School = 1, Bachelor = 2, Master = 3
+    parental_education_level = case_when(
+      parental_education_level == "None" ~ 0,
+      parental_education_level == "High School" ~ 1,
+      parental_education_level == "Bachelor" ~ 2,
+      parental_education_level == "Master" ~ 3
+    )
+  )
+```
+
+```{r}
+#| echo: false
+#| message: false
+#| warning: false
+#| fig-align: center
+#| results: hide
+# Remove exam_score using dplyr
+df_encoded <- df_encoded %>%
+  select(-exam_score)
+```
+
+
+
+
+```{r}
+#| echo: false
+#| message: false
+#| warning: false
+#| fig-align: center
+#| results: hide
+rec_df <- recipe(~.,data = df_encoded) %>%
+  step_normalize(all_numeric_predictors()) %>%
+  step_dummy(all_nominal_predictors()) 
+
+rec_df
+
+kmeans_spec <- k_means(num_clusters = tune())
+
+kmeans_wf <- workflow(rec_df, kmeans_spec)
+
+kmeans_wf <- kmeans_wf %>% 
+  update_model(kmeans_spec)
+
+grid <- tibble(num_clusters = 1:10)
+
+set.seed(123)
+boots <- bootstraps(df_encoded, times = 10)
+
+res <- tune_cluster(
+  kmeans_wf,
+  resamples = boots,
+  grid = grid,
+  metrics = cluster_metric_set(sse_within_total, sse_total, sse_ratio)
+)
+
+res_metrics <- collect_metrics(res)%>% print(n=Inf)
+
+best <- res %>%
+  select_best(metric="sse_ratio")  ###Observese que este criterio es un poco "chafa", ya que esta medida
+best                               ### en general va decreciendo con el aumento en el valor de K
+
+```
+Para k-means vamos a determinar por medio del método del codo y de la silueta el número adecuado de clusters que necesitamos:
+
+```{r}
+#| echo: false
+#| message: false
+#| warning: false
+#| fig-align: center
+#| results: hide
+#| fig-width: 18
+#| fig-height: 6
+
+library(gridExtra)
+library(ggplot2)
+library(dplyr)
+library(tidymodels)
+library(tidyclust)
+
+df_cv <- vfold_cv(df_encoded, v = 10)
+
+clust_num_grid <- grid_regular(num_clusters(),levels = 10)
+
+clust_num_grid
+
+
+res1 <- tune_cluster(
+  kmeans_wf,
+  resamples = df_cv,
+  grid = clust_num_grid,
+  control = control_grid(save_pred = TRUE, extract = identity),
+  metrics = cluster_metric_set(sse_within_total, sse_total, sse_ratio)
+)
+
+
+res1_metrics <- res1 %>% collect_metrics()%>% print(n=Inf)
+
+
+# Define school colors
+green <- "#2E8B57"
+red <- "#DC143C"
+gold <- "#FFD700"
+
+# Plot 1: SSE Ratio without CV
+p1 <- res_metrics %>%
+  filter(.metric == "sse_ratio") %>%
+  ggplot(aes(x = num_clusters, y = mean)) +
+  geom_point(color = green, size = 3) +
+  geom_line(color = red, size = 1) +
+  theme_minimal() +
+  ylab("mean WSS/TSS ratio") +
+  xlab("Número de clusters") +
+  scale_x_continuous(breaks = 1:10) +
+  ggtitle("A) Gráfica de codo K-MEANS") +
+  theme(
+    plot.title = element_text(color = green, face = "bold", size = 12),
+    axis.title = element_text(color = green, size = 10),
+    axis.text = element_text(color = red, size = 8),
+    panel.grid = element_line(color = "gray90", size = 0.3)
+  )
+
+# Plot 2: SSE Ratio with CV
+p2 <- res1_metrics %>%
+  filter(.metric == "sse_ratio") %>%
+  ggplot(aes(x = num_clusters, y = mean)) +
+  geom_point(color = green, size = 3) +
+  geom_line(color = red, size = 1) +
+  theme_minimal() +
+  ylab("mean WSS/TSS ratio cv") +
+  xlab("Number of clusters") +
+  scale_x_continuous(breaks = 1:10) +
+  ggtitle("B) Gráfica de codo K-MEANS con CV") +
+  theme(
+    plot.title = element_text(color = green, face = "bold", size = 12),
+    axis.title = element_text(color = green, size = 10),
+    axis.text = element_text(color = red, size = 8),
+    panel.grid = element_line(color = "gray90", size = 0.3)
+  )
+
+# Plot 3: Silhouette Method
+p3 <- ggplot(metrics_df, aes(x = num_clusters, y = mean)) +
+  geom_line(color = green, size = 1) +
+  geom_point(color = red, size = 3) +
+  labs(
+    title = "C) Silhouette Method",
+    subtitle = "k = 2 to 10, 10 folds",
+    x = "Número de Clusters (k)",
+    y = "Promedio Silhouette Score"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(color = green, face = "bold", size = 12),
+    plot.subtitle = element_text(color = gold, size = 9),
+    axis.title = element_text(color = green, size = 10),
+    axis.text = element_text(color = red, size = 8),
+    panel.grid = element_line(color = "gray90", size = 0.3)
+  )
+
+# Arrange in 1x3 grid (side by side)
+grid.arrange(p1, p2, p3, ncol = 3,
+             top = textGrob("Métodos para Determinar el Número Óptimo de Clusters", 
+                            gp = gpar(col = green, fontface = "bold", fontsize = 14)))
+
+```
+Podemos apreciar entonces:
+
+- Para la primera gráfica, el número adecuado es 4
+- Para la segunda parece ser 5
+- Para la tercera es 3
+
+No es consistente. Veamos más pruebas.
+
+
+```{r}
+
+#| echo: false
+#| message: false
+#| warning: false
+#| results: hide
+#| fig-align: center
+#| fig-width: 18
+#| fig-height: 10
+
+library(tidymodels)
+library(dplyr)
+
+# Define school colors
+green <- "#2E8B57"
+red <- "#DC143C"
+gold <- "#FFD700"
+
+recipe_df <- recipe(~., data = df_encoded) %>%
+  step_normalize(all_numeric_predictors()) %>%
+  step_dummy(all_nominal_predictors()) 
+
+kmeans_df <- k_means(num_clusters = 3)
+
+kmeans_df_wf <- workflow(recipe_df, kmeans_df)
+
+kmeans_df_fit <- fit(kmeans_df_wf, data = df_encoded)
+
+# Get clustered data
+clustered_data <- augment(kmeans_df_fit, new_data = df_encoded)
+
+# Add exam_score from original df
+clustered_data <- clustered_data %>%
+  bind_cols(df %>% select(exam_score))
+
+# Get centroids (these don't have exam_score)
+centroids <- tidy(kmeans_df_fit)
+
+# Plot using only the variables available in centroids
+# The centroids won't have exam_score, so we need to plot something else
+ggplot() +
+  geom_point(data = clustered_data, 
+             aes(x = scale(study_hours_per_day), y = scale(exam_score), color = .pred_cluster), 
+             alpha = 0.6, size = 2.5) +
+  # Remove the centroids from the plot since they don't have exam_score
+  scale_color_manual(values = c(green, red, gold)) +
+  theme_minimal() +
+  labs(
+    title = "K-Means Clustering",
+    subtitle = "Número de grupos: k = 3",
+    x = "Horas de Estudio (escalado)",
+    y = "Resultado Examen (escalado)",
+    color = "Cluster"
+  ) +
+  theme(
+    plot.title = element_text(color = green, face = "bold", size = 14),
+    plot.subtitle = element_text(color = gold, size = 11),
+    axis.title = element_text(color = green, size = 11),
+    axis.text = element_text(color = red, size = 9),
+    legend.title = element_text(color = gold, face = "bold"),
+    legend.text = element_text(color = green),
+    panel.grid = element_line(color = "gray90", size = 0.3),
+    panel.border = element_rect(color = green, fill = NA, size = 0.5)
+  )
+```
+Usando k=3 no obtenemos una clara separación.
+
+
+
+```{r}
+#| echo: false
+#| message: false
+#| warning: false
+#| fig-align: center
+#| results: hide
+#| fig-width: 18
+#| fig-height: 18
+
+library(factoextra)
+library(ggplot2)
+library(gridExtra)
+library(grid)
+library(dplyr)
+library(NbClust)
+library(ClusterR)
+library(vegan)
+
+green <- "#2E8B57"
+red <- "#DC143C"
+gold <- "#FFD700"
+
+df1 <- df_encoded %>% scale()
+
+p1 <- fviz_nbclust(df1, kmeans, method = "wss") +
+  labs(
+    x = "Número de clusters",
+    y = "Total suma de cuadrados intra clusters",
+    title = "A) Método del Codo (WSS)"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    plot.title = element_text(color = green, face = "bold", size = 14),
+    axis.title = element_text(color = green, size = 12),
+    axis.text = element_text(color = red, size = 10),
+    panel.grid = element_line(color = "gray90", size = 0.3)
+  )
+
+p2 <- fviz_nbclust(df1, kmeans, method = "silhouette") +
+  labs(
+    x = "Número de clusters",
+    y = "Promedio de silueta",
+    title = "B) Método de Silueta"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    plot.title = element_text(color = green, face = "bold", size = 14),
+    axis.title = element_text(color = green, size = 12),
+    axis.text = element_text(color = red, size = 10),
+    panel.grid = element_line(color = "gray90", size = 0.3)
+  )
+
+p3 <- fviz_nbclust(df1, kmeans, method = "gap_stat") +
+  labs(
+    x = "Número de clusters",
+    y = "GAP",
+    title = "C) Gap Statistic"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    plot.title = element_text(color = green, face = "bold", size = 14),
+    axis.title = element_text(color = green, size = 12),
+    axis.text = element_text(color = red, size = 10),
+    panel.grid = element_line(color = "gray90", size = 0.3)
+  )
+
+set.seed(123)
+wss <- sapply(1:10, function(k) {
+  kmeans(df1, centers = k, nstart = 25)$tot.withinss
+})
+
+var_explained <- 1 - wss / sum((scale(df1))^2)
+
+var_df <- data.frame(
+  num_clusters = 1:10,
+  variance_explained = var_explained
+)
+
+p4 <- ggplot(var_df, aes(x = num_clusters, y = variance_explained)) +
+  geom_line(color = green, size = 1.2) +
+  geom_point(color = red, size = 3) +
+  geom_hline(yintercept = 0.90, color = gold, linetype = "dashed", size = 0.8) +
+  annotate("text", x = 8, y = 0.91, label = "90% threshold", 
+           color = gold, fontface = "bold", size = 3.5) +
+  labs(
+    title = "D) Variance Explained",
+    x = "Número de clusters",
+    y = "Proporción de varianza explicada"
+  ) +
+  scale_x_continuous(breaks = 1:10) +
+  theme_minimal(base_size = 12) +
+  theme(
+    plot.title = element_text(color = green, face = "bold", size = 14),
+    axis.title = element_text(color = green, size = 12),
+    axis.text = element_text(color = red, size = 10),
+    panel.grid = element_line(color = "gray90", size = 0.3)
+  )
+
+k_values <- 2:10
+aic_values <- sapply(k_values, function(k) {
+  km <- kmeans(df1, centers = k, nstart = 25)
+  n <- nrow(df1)
+  p <- ncol(df1)
+  rss <- km$tot.withinss
+  aic <- n * log(rss/n) + 2 * k * p
+  return(aic)
+})
+
+aic_df <- data.frame(
+  num_clusters = k_values,
+  AIC = aic_values
+)
+
+p5 <- ggplot(aic_df, aes(x = num_clusters, y = AIC)) +
+  geom_line(color = green, size = 1.2) +
+  geom_point(color = red, size = 3) +
+  labs(
+    title = "E) AIC Criterion",
+    x = "Número de clusters",
+    y = "AIC"
+  ) +
+  scale_x_continuous(breaks = 2:10) +
+  theme_minimal(base_size = 12) +
+  theme(
+    plot.title = element_text(color = green, face = "bold", size = 14),
+    axis.title = element_text(color = green, size = 12),
+    axis.text = element_text(color = red, size = 10),
+    panel.grid = element_line(color = "gray90", size = 0.3)
+  )
+
+best_k_summary <- data.frame(
+  Method = c("WSS/Elbow", "Silhouette", "Gap", "Variance Explained", "AIC"),
+  Optimal_k = c(
+    which.min(diff(wss)) + 1,
+    which.max(sapply(2:10, function(k) {
+      km <- kmeans(df1, centers = k, nstart = 25)
+      avg_sil <- mean(cluster::silhouette(km$cluster, dist(df1))[, 3])
+      return(avg_sil)
+    })) + 1,
+    3,
+    which(var_explained >= 0.90)[1],
+    which.min(aic_values) + 1
+  )
+)
+
+p6 <- ggplot(best_k_summary, aes(x = Method, y = Optimal_k, fill = Method)) +
+  geom_bar(stat = "identity", width = 0.6) +
+  geom_text(aes(label = Optimal_k), vjust = -0.5, size = 5, fontface = "bold") +
+  scale_fill_manual(values = c(green, red, gold, green, red)) +
+  labs(
+    title = "F) Resumen de Métodos",
+    x = "Método",
+    y = "Número óptimo de clusters"
+  ) +
+  ylim(0, max(best_k_summary$Optimal_k) + 2) +
+  theme_minimal(base_size = 12) +
+  theme(
+    plot.title = element_text(color = green, face = "bold", size = 14),
+    axis.title = element_text(color = green, size = 12),
+    axis.text.x = element_text(color = red, size = 9, angle = 45, hjust = 1),
+    axis.text.y = element_text(color = red, size = 10),
+    legend.position = "none",
+    panel.grid = element_line(color = "gray90", size = 0.3)
+  )
+
+grid.arrange(p1, p2, p3, p4, p5, p6, 
+             ncol = 3,
+             top = textGrob("Métodos para Determinar el Número Óptimo de Clusters", 
+                            gp = gpar(col = green, fontface = "bold", fontsize = 18)))
+```
+
+En este resumen podemos notar que hay una recomendación inconsistente de número de clusters. Unos recomiendan 3, otros 2 y hay uno que no logró recomendar nada con base en la varianza explicada (eso sucede por lo visto en el documento 1 donde vemos que se necesitan demasiadas componentes para explicar un buen porcentaje de varianza). 
+
+```{r}
+#| echo: false
+#| message: false
+#| warning: false
+#| fig-align: center
+#| results: hide
+#| fig-width: 16
+#| fig-height: 7
+
+library(factoextra)
+library(ggplot2)
+library(gridExtra)
+library(dplyr)
+
+# Define school colors
+green <- "#2E8B57"
+red <- "#DC143C"
+gold <- "#FFD700"
+
+k2 <- kmeans(df1, centers = 3, nstart = 25)
+
+# Graph 1: Basic cluster plot with school colors
+p1 <- fviz_cluster(k2, 
+                   geom = "point", 
+                   data = df1,
+                   palette = c(green, red, gold),
+                   ggtheme = theme_minimal(base_size = 14)) + 
+  ggtitle("A) Clusters con K-Means (k=3)") +
+  theme(
+    plot.title = element_text(color = green, face = "bold", size = 16),
+    axis.title = element_text(color = green, size = 14),
+    axis.text = element_text(color = red, size = 12),
+    legend.title = element_text(color = gold, face = "bold"),
+    legend.text = element_text(color = green),
+    panel.grid = element_line(color = "gray90", size = 0.3),
+    panel.border = element_rect(color = green, fill = NA, size = 0.8)
+  )
+
+# Graph 3: Cluster plot with normal ellipse and school colors
+p3 <- fviz_cluster(k2, 
+                   data = df1,
+                   ellipse.type = "norm",
+                   palette = c(green, red, gold),
+                   ggtheme = theme_minimal(base_size = 14)) + 
+  ggtitle("B) Clusters con Elipse Normal (k=3)") +
+  theme(
+    plot.title = element_text(color = green, face = "bold", size = 16),
+    axis.title = element_text(color = green, size = 14),
+    axis.text = element_text(color = red, size = 12),
+    legend.title = element_text(color = gold, face = "bold"),
+    legend.text = element_text(color = green),
+    panel.grid = element_line(color = "gray90", size = 0.3),
+    panel.border = element_rect(color = green, fill = NA, size = 0.8)
+  )
+
+# Arrange side by side
+grid.arrange(p1, p3, ncol = 2,
+             top = textGrob("Visualización de Clusters K-Means", 
+                            gp = gpar(col = green, fontface = "bold", fontsize = 18)))
+```
+De igual manera, notamos que no se agrupan. Los clusters no están separados. Hay una intersección increíble entre los tres. 
+
+```{r}
+#| echo: false
+#| message: false
+#| warning: false
+#| fig-align: center
+#| results: hide
+#| fig-width: 20
+#| fig-height: 15
+
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+
+# Define school colors
+green <- "#2E8B57"
+red <- "#DC143C"
+gold <- "#FFD700"
+
+# Bind clusters with df1 (scaled data)
+kmeans_clusters <- 
+  bind_cols(df1, cluster = k2$cluster)
+
+# Add exam_score from original df
+kmeans_clusters <- kmeans_clusters %>%
+  bind_cols(exam_score = df$exam_score)
+
+# Boxplot with ALL variables including exam_score
+kmeans_clusters %>%
+  pivot_longer(-cluster) %>% 
+  ggplot(aes(x = as.factor(cluster), y = value, fill = as.factor(cluster))) +
+  geom_boxplot(show.legend = FALSE, 
+               size = 1.2, 
+               outlier.size = 3,
+               outlier.shape = 21,
+               outlier.fill = gold,
+               width = 0.7) +
+  scale_fill_manual(values = c(green, red, gold)) +
+  facet_wrap(vars(name), scales = "free", ncol = 4) +
+  labs(
+    title = "Distribución de Variables por Cluster",
+    subtitle = "K-Means con k = 3 clusters | Incluyendo Resultado Examen",
+    x = "Cluster",
+    y = "Valor (escalado)"
+  ) +
+  theme_minimal(base_size = 16) +
+  theme(
+    plot.title = element_text(color = green, face = "bold", size = 22),
+    plot.subtitle = element_text(color = gold, size = 16, face = "bold"),
+    axis.title = element_text(color = green, size = 16),
+    axis.text = element_text(color = red, size = 14),
+    axis.text.x = element_text(size = 14, face = "bold"),
+    strip.text = element_text(color = green, face = "bold", size = 14),
+    strip.background = element_rect(fill = "gray98", color = green, size = 1),
+    panel.grid = element_line(color = "gray90", size = 0.5),
+    panel.border = element_rect(color = green, fill = NA, size = 1),
+    plot.background = element_rect(fill = "white", color = NA),
+    plot.margin = margin(20, 20, 20, 20)
+  )
+
+
+```
+Podemos notar que entre clusters no hay mucha diferencia. Ni los resultados de examen ni los hábitos parecen agruparse de alguna manera.
+
+
+
+
+```{r}
+#| echo: false
+#| message: false
+#| warning: false
+#| fig-align: center
+#| results: hide
+
+df_pca_rec <- recipe(~ ., data = df_encoded) %>%
+  #update_role(diagnosis, new_role = "id") %>%
+  step_normalize(all_predictors()) %>%
+  step_pca(all_predictors(), num_comp = 4)
+
+df_pca_wf <- workflow() %>%
+  add_recipe(df_pca_rec)
+
+capture.output({
+  kmeans_specific <- k_means(num_clusters = 3) %>%
+    set_engine("ClusterR")
+  
+  kmeans_workf <- workflow(df_pca_rec, kmeans_specific)
+  kmeans_proc <- fit(kmeans_workf, data = df_encoded)
+  
+  kmeans_specific1 <- kmeans_specific %>% 
+    set_args(num_clusters = tune())
+  
+  kmeans_workf1 <- workflow(df_pca_rec, kmeans_specific1)
+  
+  set.seed(123)
+  boots <- bootstraps(df_encoded, times = 10)
+  
+  tune_res <- tune_cluster(
+    kmeans_workf1,
+    resamples = boots
+  )
+  
+  collect_metrics(tune_res)
+  extract_cluster_assignment(kmeans_proc)
+  extract_centroids(kmeans_proc)
+  
+  set.seed(123)
+  predict(kmeans_proc, new_data = slice_sample(as.data.frame(df_encoded), n = 10))
+  
+  kmeans_summary <- kmeans_proc %>%
+    extract_fit_summary()
+  
+  tibble(
+    orig_labels = kmeans_summary$orig_labels,
+    standard_labels = kmeans_summary$cluster_assignments
+  )
+  
+  TC_CP <- table(df$exam_score, kmeans_summary$orig_labels)
+  1 - sum(diag(TC_CP)) / sum(TC_CP)
+}, file = NULL)
+```
+
+
+```{r}
+#| echo: false
+#| message: false
+#| warning: false
+#| fig-align: center
+#| results: hide
+#| fig-width: 12
+#| fig-height: 6
+
+library(ggplot2)
+library(dplyr)
+library(recipes)
+
+# Define school colors
+green <- "#2E8B57"
+red <- "#DC143C"
+gold <- "#FFD700"
+
+class_pca <- kmeans_summary$cluster_assignments
+
+head(class_pca)
+
+table(kmeans_clusters$cluster, class_pca)
+
+kmeans_proc %>%
+  silhouette_avg(df_encoded)
+
+## Graficas finales
+
+pca_cluster <- recipe(~ ., data = df_encoded) %>%
+  #update_role(exam_score, new_role = "id") %>%
+  step_normalize(all_predictors()) %>%
+  step_pca(all_predictors(), num_comp = 4) %>%
+  prep(df_encoded) %>%
+  bake(df_encoded)
+
+pca_clusters2 <- 
+  bind_cols(pca_cluster, cluster = k2$cluster)
+
+# Plot 1: PCA with both color and shape
+cluster_plot <- pca_clusters2 %>% 
+  ggplot(mapping = aes(x = PC1, y = PC2)) +
+  geom_point(aes(color = factor(cluster), shape = factor(cluster)), size = 3, alpha = 0.8) +
+  scale_color_manual(values = c(green, red, gold)) +
+  scale_shape_manual(values = c(16, 17, 15)) +
+  labs(
+    title = "PCA - Clustering Visualization",
+    subtitle = "K-Means con k = 2",
+    color = "Cluster",
+    shape = "Cluster"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(color = green, face = "bold", size = 14),
+    plot.subtitle = element_text(color = gold, size = 11),
+    axis.title = element_text(color = green, size = 11),
+    axis.text = element_text(color = red, size = 9),
+    legend.title = element_text(color = gold, face = "bold"),
+    legend.text = element_text(color = green),
+    panel.grid = element_line(color = "gray90", size = 0.3),
+    panel.border = element_rect(color = green, fill = NA, size = 0.5)
+  )
+
+# Plot 2: PCA with color only
+clust_spc_plot <- pca_clusters2 %>% 
+  ggplot(mapping = aes(x = PC1, y = PC2)) +
+  geom_point(aes(color = factor(cluster)), size = 3, alpha = 0.8) +
+  scale_color_manual(values = c(green, red, gold)) +
+  labs(
+    title = "PCA - Cluster Distribution",
+    subtitle = "K-Means con k = 2",
+    color = "Cluster"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(color = green, face = "bold", size = 14),
+    plot.subtitle = element_text(color = gold, size = 11),
+    axis.title = element_text(color = green, size = 11),
+    axis.text = element_text(color = red, size = 9),
+    legend.title = element_text(color = gold, face = "bold"),
+    legend.text = element_text(color = green),
+    panel.grid = element_line(color = "gray90", size = 0.3),
+    panel.border = element_rect(color = green, fill = NA, size = 0.5)
+  )
+
+# Display both plots side by side
+library(gridExtra)
+grid.arrange( clust_spc_plot, ncol = 1,
+             top = textGrob("Análisis de Clustering con PCA", 
+                            gp = gpar(col = green, fontface = "bold", fontsize = 16)))
+
+
+```
+
+
+# Conclusión
+
+
+Parecido a lo que concluimos en el documento 1, este conjunto de datos no se agrupa de manera natural. Esto quiere decir que no pudimos agrupar a los estudiantes por sus hábitos y que estos tampoco tuvieron incidencia alguna en sus calificaciones. Al notar esto, intentamos agregar `exam_score` como parte de los datos, pero esto tampoco ayudó mucho. Además de que lo único que ocasionaría sería tener data leakage. 
+Si existiese una agrupación natural, los distintos métodos (codo, silueta,etc) tendrían un valor `k` similar. Pero no es así. Esto concuerda con lo que vimos en clase, no todos los conjuntos de datos se agruparan de forma natural, si algo indica lo que encontramos en las pruebas fue que los estudiantes son diversos. 
+
+
