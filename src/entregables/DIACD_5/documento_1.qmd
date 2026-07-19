@@ -1,0 +1,2015 @@
+---
+title: |
+  \begin{center}
+  \includegraphics[width=0.4\textwidth]{banner-fciencias-color-dark.png}\\[2em]
+  Documento 1 - Técnicas de reducción de dimensión: PC, t-SNE y UMAP
+  \end{center}
+
+author: 
+  - Raúl Llamosas Alvarado
+  - Eumir Rendon Uresti
+  - Gabriela Peña Franco
+  - Daniela Ibarra Gatica
+  - Randy Jesús García Mejía
+  - Daniela Vázquez Sánchez
+
+
+format:
+    pdf:
+        fontsize: 8pt   
+        toc: true
+        toc-depth: 2
+        geometry: margin=1cm
+        fig-width: 4
+        fig-height: 3
+        code-block-bg: "C4CDD5"
+        include-in-header:
+          - text: |
+              \usepackage{graphicx}
+              \usepackage{titlesec}
+              \usepackage{tocloft}
+              \definecolor{mytitlecolor}{HTML}{0b4166}
+              % Títulos de sección en color
+              \titleformat{\section}{\color{mytitlecolor}\normalfont\Large\bfseries}{\thesection}{1em}{}
+              \titleformat{\subsection}{\color{mytitlecolor}\normalfont\large\bfseries}{\thesubsection}{1em}{}
+              \titleformat{\subsubsection}{\color{mytitlecolor}\normalfont\normalsize\bfseries}{\thesubsubsection}{1em}{}
+              % Índice coloreado
+              \renewcommand{\cftsecfont}{\color{mytitlecolor}\bfseries}
+              \renewcommand{\cftsubsecfont}{\color{mytitlecolor}\bfseries}
+
+self-contained: true
+toc: true
+toc-depth: 2
+jupyter: python3
+engine: knitr
+knitr:
+  opts_chunk:
+    echo: false
+params:
+  python_path: "~/Documentos/espacio_trabajo_intro_analisis_dat2/proyecto_modulo_6/.ambiente_virtual_p6/bin/python"
+---
+
+# Introducción 
+
+Nuestro proyecto consiste en usar técnicas de reducción de dimensión en el siguiente dataset: `habits.csv`, el cual es un dataset con información acerca de los hábitos de estudiantes, como lo pueden ser su consumo en horas de redes sociales, sus hábitos alimenticios, resultados de examen, etc. La idea es intentar agrupar usando solamente sus hábitos y ver si estos tienen alguna incidencia sobre su calificación de examen. 
+Nuestra intuición nos dice que aquellos estudiantes con buenos hábitos deberían tener buenas notas.
+
+Todo nuestro código se encuentra en el [siguiente repositorio de GitHub](https://github.com/MelodiousZero/proyecto_modulo_6).
+
+# Estadística descriptiva
+
+
+
+Vamos a cargar nuestro dataset. A continuación mostraremos solo una parte de este para no saturar la página por lo que no incluye todas las columnas.
+
+```{r}
+#| echo: false
+#| message: false
+#| warning: false
+#| output: false
+library(reticulate)
+
+use_virtualenv("~/Documentos/espacio_trabajo_intro_analisis_dat2/proyecto_modulo_6/.ambiente_virtual_p6")
+```
+
+```{python}
+#| echo: false
+#| message: false
+#| warning: false
+#| output: asis
+
+import pandas as pd
+
+habits = pd.read_csv("/home/yamorza/Documentos/espacio_trabajo_intro_analisis_dat2/proyecto_modulo_6/src/habits.csv")
+
+df_subset = habits[["study_hours_per_day","social_media_hours","netflix_hours","mental_health_rating","exam_score"]].head(5)
+
+# Renombrar
+df_subset.columns = ["Horas de Estudio", "Redes Sociales", "Netflix", " Salud Mental", "Resultado Examen"]
+
+# Tabla markdown con alineación
+print(df_subset.to_markdown(index=False, tablefmt="github"))
+```
+
+Tenemos 4 variables categorícas: 
+
+- `gender`
+- `diet_quality`
+- `parental_education_level`
+- `internet_quality`
+
+Dos booleanas:
+
+- `extracurricular_participation`
+- `part_time_job`
+
+El resto de las variables son numéricas.
+La distribución por geńero del dataset es la siguiente:
+
+```{python}
+#| echo: false
+#| message: false
+#| warning: false
+#| fig-align: center
+#| results: hide
+
+
+import pandas as pd
+import matplotlib.pyplot as plt
+
+
+gender_counts = habits['gender'].value_counts()
+
+colors = ['#2E8B57', '#FFD700', '#4682B4', '#FF8C00', '#8B4513', '#DC143C']
+
+plt.figure(figsize=(3, 3))
+wedges, texts, autotexts = plt.pie(
+    gender_counts.values, 
+    labels=gender_counts.index, 
+    autopct='%1.1f%%', 
+    startangle=90,
+    colors=colors[:len(gender_counts)],
+    shadow=True,
+    explode=[0.02] * len(gender_counts),
+    textprops={'fontsize': 6, 'fontweight': 'bold', 'color': '#333333'},
+    pctdistance=0.85
+)
+
+for autotext in autotexts:
+    autotext.set_color('white')
+    autotext.set_fontsize(3)
+    autotext.set_fontweight('bold')
+
+plt.title('Distribución por género del dataset.', 
+          fontsize=9, 
+          fontweight='bold',
+          color='#2E8B57',  # Chalkboard green for title
+          pad=20)
+
+plt.axis('equal')
+plt.tight_layout()
+plt.show()
+plt.close()
+
+```
+
+```{python}
+#| echo: false
+#| output: false
+import pandas as pd
+from ydata_profiling import ProfileReport
+import json 
+profile = ProfileReport(habits, title="Habits EDA")
+
+
+
+```
+
+```{python}
+#| echo: false
+#| output: false
+
+
+correlation_matrix = profile.to_json()
+correlation_matrix = json.loads(correlation_matrix)
+correlation_matrix = correlation_matrix["correlations"]
+correlation_matrix
+```
+
+Y la matriz de correlación es la siguiente:
+
+```{python}
+#| echo: false
+#| message: false
+#| warning: false
+#| results: hide
+
+
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+import numpy as np
+
+lista_correlaciones = correlation_matrix['auto']
+
+nombres_variables = list(lista_correlaciones[0].keys())
+
+matriz = []
+for fila in lista_correlaciones:
+    matriz.append([fila[var] for var in nombres_variables])
+
+correlaciones_df = pd.DataFrame(matriz, index=nombres_variables, columns=nombres_variables)
+
+plt.figure(figsize=(7, 6))
+
+mask = np.triu(np.ones_like(correlaciones_df, dtype=bool))
+
+sns.heatmap(
+    correlaciones_df,
+    mask=mask,
+    annot=True,
+    fmt='.2f',
+    cmap='RdYlGn',
+    center=0,
+    square=True,
+    linewidths=0.5,
+    cbar_kws={"shrink": 0.8, "label": "Coeficiente de Correlación"},
+    annot_kws={'size': 4},
+    vmin=-1,
+    vmax=1
+)
+
+plt.title('Matriz de Correlación de Hábitos Estudiantiles', 
+          fontsize=8, 
+          fontweight='bold',
+          pad=20)
+
+plt.xticks(rotation=45, ha='right', fontsize=5)
+plt.yticks(rotation=0, fontsize=5)
+
+plt.tight_layout()
+plt.show()
+
+
+
+```
+
+
+Notamos lo siguiente:
+
+- La correlación más alta es la de `exam_score` con `study_hours_per_day` con `0.81`. 
+- La segunda correlación más alta es la de `exam_score` con `mental_health_rating` con `0.32`.
+- Hay correlaciones negativas entre `exam_score` con `netflix_hours` y `social_media_hours` respectivamente. Ambas del `0.17`
+
+De esto podemos intuir que estudiar más horas al día y tener buena salud mental tiene un efecto positivo sobre las notas del examen. También que tener pobres hábitos respecto al uso de desmedido de redes sociales tiene un efecto negativo sobre dichas notas.
+A continuación, graficaremos la relación entre `study_hours_per_day` con `exam_score` 
+
+```{python}
+#| echo: false
+#| fig-align: center
+
+import pandas as pd
+import matplotlib.pyplot as plt
+import numpy as np
+from scipy import stats
+
+colores_genero = {
+    'Female': '#2E8B57',
+    'Male': '#FFD700',
+    'Other': '#4682B4'
+}
+
+plt.figure(figsize=(5, 4))
+
+for genero, color in colores_genero.items():
+    subset = habits[habits['gender'] == genero]
+    plt.scatter(subset['study_hours_per_day'], subset['exam_score'], 
+                alpha=0.6, s=50, c=color, edgecolors='black', linewidth=0.5, 
+                label=f'{genero}')
+
+x = habits['study_hours_per_day']
+y = habits['exam_score']
+slope, intercept, r_value, p_value, std_err = stats.linregress(x, y)
+r_squared = r_value ** 2
+
+x_line = np.linspace(x.min(), x.max(), 100)
+y_line = slope * x_line + intercept
+plt.plot(x_line, y_line, color='#8B4513', linewidth=2.5, linestyle='--', 
+         label=f'Regresión general (r² = {r_squared:.3f})')
+
+plt.xlabel('Horas de Estudio por Día', fontsize=6, fontweight='bold', color='#2E8B57')
+plt.ylabel('Calificación en Examen', fontsize=6, fontweight='bold', color='#2E8B57')
+plt.title('Relación entre Horas de Estudio y Calificación por Género\nHábitos Estudiantiles', 
+          fontsize=7, fontweight='bold', color='#2E8B57', pad=20)
+
+plt.grid(True, alpha=0.3, linestyle='--', color='#8B4513')
+plt.legend(loc='lower right', fontsize=5.5, framealpha=0.9, edgecolor='#2E8B57')
+
+plt.text(0.05, 0.95, f'Ecuación: y = {slope:.3f}x + {intercept:.3f}\nR² = {r_squared:.3f}\np-valor = {p_value:.4f}', 
+         transform=plt.gca().transAxes, fontsize=5, 
+         bbox=dict(boxstyle="round,pad=0.5", facecolor='#FFF8DC', edgecolor='#2E8B57', alpha=0.9),
+         verticalalignment='top')
+
+plt.tight_layout()
+plt.show()
+```
+
+Ahora, graficaremos la relación entre las variables categóricas con el resultado del examen:
+
+```{python}
+#| echo: false
+#| fig-align: center
+#| fig-height: 8
+#| fig-width: 16
+
+
+import pandas as pd
+import matplotlib.pyplot as plt
+import numpy as np
+
+categorical_columns = ['gender', 'part_time_job', 'extracurricular_participation', 'parental_education_level', 'diet_quality','internet_quality']
+
+fig, axes = plt.subplots(2, 3, figsize=(14, 7.5))
+axes = axes.flatten()
+
+colores_escolares = ['#2E8B57', '#FFD700', '#4682B4', '#FF8C00', '#8B4513']
+
+for idx, col in enumerate(categorical_columns):
+    if idx < len(axes):
+        media = habits.groupby(col)['exam_score'].mean().sort_values(ascending=False)
+        error = habits.groupby(col)['exam_score'].sem()
+        
+        bars = axes[idx].bar(media.index, media.values, 
+                            color=colores_escolares[:len(media)], 
+                            edgecolor='#1a5a3a', linewidth=1.5,
+                            yerr=error.values, capsize=5, alpha=0.8)
+        
+        axes[idx].set_title(col.replace('_', ' ').title(), fontsize=12, fontweight='bold', color='#2E8B57')
+        axes[idx].set_xlabel('Categoría', fontsize=10, color='#2E8B57')
+        axes[idx].set_ylabel('Calificación Promedio', fontsize=10, color='#2E8B57')
+        axes[idx].grid(True, alpha=0.3, linestyle='--', color='#8B4513')
+        axes[idx].tick_params(axis='x', rotation=45, labelsize=9)
+        
+        for bar in bars:
+            height = bar.get_height()
+            axes[idx].text(bar.get_x() + bar.get_width()/2., height + 0.5,
+                          f'{height:.1f}', ha='center', va='bottom', fontsize=9, fontweight='bold')
+
+for idx in range(len(categorical_columns), len(axes)):
+    axes[idx].set_visible(False)
+
+
+
+plt.tight_layout()
+plt.show()
+```
+
+Podemos notar, que parece no tener mucha incidencia en la variable `exam_score`. Lo cual coincide con lo mencionado arriba respecto a las correlaciones.
+
+# Técnicas de reducción de dimensión
+
+\subsection{PC}
+\label{pc}
+
+
+
+```{r}
+#| echo: false
+#| message: false
+#| warning: false
+#| fig-align: center
+
+library(reticulate)
+# library(learnr)
+library(tidyverse)
+library(tidymodels)
+library(embed)
+library(corrr)
+library(tidytext)
+library(gradethis)
+library(sortable)
+library(learntidymodels)
+library(rstatix)
+library(broom)
+library(rgl)
+library(plotly)
+library(GGally)
+library(tidyr)
+library(FactoMineR)  
+library(factoextra)
+library(ggord)
+library(modeldata) 
+library(tsne)  
+library(uwot)  
+library(scattermore)  
+library(readr)  
+library(Rtsne)  
+library(gganimate)  
+library(data.table)  
+library(baguette)
+library(discrim)
+theme_set(theme_bw(16))
+
+tidymodels_prefer()
+
+df<-read.csv("/home/yamorza/Documentos/espacio_trabajo_intro_analisis_dat2/proyecto_modulo_6/src/habits.csv")
+
+```
+
+
+Comenzaremos con nuestra reduccion PCA
+
+Vamos a estandarizar nuestras variables y lidiar con las variables categóricas mencionadas en el paso anterior por medio de la siguiente codificación
+
+```{r}
+#| echo: True
+#| message: false
+#| warning: false
+#| fig-align: center
+library(dplyr)
+
+df_encoded <- df %>%
+  mutate(
+    part_time_job = ifelse(part_time_job== "No",1,0),
+    extracurricular_participation = ifelse(extracurricular_participation== "Yes",1,0),
+
+    gender = ifelse(gender == "Male", 0, 1),
+    
+    internet_quality = case_when(
+      internet_quality == "Poor" ~ 0,
+      internet_quality == "Average" ~ 1,
+      internet_quality == "Good" ~ 2
+    ),
+    
+    diet_quality = case_when(
+      diet_quality == "Poor" ~ 0,
+      diet_quality == "Fair" ~ 1,
+      diet_quality == "Good" ~ 2
+    ),
+    
+    parental_education_level = case_when(
+      parental_education_level == "None" ~ 0,
+      parental_education_level == "High School" ~ 1,
+      parental_education_level == "Bachelor" ~ 2,
+      parental_education_level == "Master" ~ 3
+    ))
+```
+
+De esta manera se le asigna a las variables categóricas un valor númerico, de lo contrario los modelos no funcionarían. Ahora vamos a correr la receta del PCA, removiendo la variable `exam_score` de la siguiente manera:
+
+```{r}
+#| echo: true
+#| message: false
+#| warning: false
+#| fig-align: center
+
+df_pca <- df_encoded %>% select(-exam_score)
+
+receta_pca <- recipe(~ ., data = df_pca) %>%
+  step_normalize(all_predictors())
+
+datos_preparados <- prep(receta_pca) %>%
+  bake(new_data = NULL)
+
+datos_finales <- datos_preparados %>%
+  bind_cols(exam_score = df$exam_score)
+
+```
+
+Con lo cual obtenemos la siguiente gráfica que explica la varianza acumulada.
+
+```{r}
+#| echo: false
+#| message: false
+#| warning: false
+#| fig-align: center
+
+pca_modelo <- prcomp(datos_preparados, center = FALSE, scale. = FALSE)
+
+varianza_explicada <- summary(pca_modelo)$importance
+
+
+num_componentes <- length(pca_modelo$sdev)
+
+scree_data <- data.frame(
+  Componente = 1:num_componentes,
+  Varianza = pca_modelo$sdev^2 / sum(pca_modelo$sdev^2) * 100,
+  Varianza_Acumulada = cumsum(pca_modelo$sdev^2 / sum(pca_modelo$sdev^2)) * 100
+)
+
+ggplot(scree_data, aes(x = Componente)) +
+  geom_col(aes(y = Varianza_Acumulada), fill = "#2E8B57", alpha = 0.7) +
+  geom_line(aes(y = Varianza_Acumulada), color = "#FFD700", size = 1.5) +
+  geom_point(aes(y = Varianza_Acumulada), color = "#FFD700", size = 3) +
+  geom_hline(yintercept = 80, linetype = "dashed", color = "#DC143C", alpha = 0.6, size = 1) +
+  geom_hline(yintercept = 90, linetype = "dashed", color = "#DC143C", alpha = 0.3, size = 1) +
+  annotate("text", x = num_componentes - 2, y = 82, label = "80%", color = "#DC143C", size = 4) +
+  annotate("text", x = num_componentes - 2, y = 92, label = "90%", color = "#DC143C", size = 4) +
+  labs(x = "Componente Principal",
+       y = "Porcentaje de Varianza Acumulada",
+       title = "Scree Plot - Varianza Acumulada",
+       subtitle = "Barras y línea muestran la varianza acumulada") +
+  theme_minimal() +
+  theme(plot.title = element_text(color = "#2E8B57", face = "bold", size = 14),
+        plot.subtitle = element_text(color = "#4682B4", size = 10))
+
+
+
+
+```
+Notamos que necesitamos muchas componentes para explicar varianza.
+
+```{r}
+#| echo: false
+#| message: false
+#| warning: false
+#| fig-align: center
+
+scores_pca <- as.data.frame(pca_modelo$x)
+
+scores_pca <- scores_pca %>%
+  bind_cols(exam_score = df$exam_score)
+
+ggplot(scores_pca, aes(x = PC1, y = PC2, color = exam_score)) +
+  geom_point(size = 2.5, alpha = 0.7) +
+  scale_color_gradient2(
+    low = "#DC143C",
+    mid = "#FFD700",
+    high = "#2E8B57",
+    midpoint = 70,
+    name = "Calificación"
+  ) +
+  labs(x = paste0("PC1: ", round(varianza_explicada[2, 1] * 100, 2), "%"),
+       y = paste0("PC2: ", round(varianza_explicada[2, 2] * 100, 2), "%"),
+       title = "Componentes Principales - Estudiantes por Calificación") +
+  theme_minimal() +
+  theme(plot.title = element_text(color = "#2E8B57", face = "bold", size = 7))
+
+```
+Notamos que los que se acercan al rojo están en la esquina superior izquierda , los más verdes parecen concentrarse en la esquina inferior derecha Y en medio tienes a calificaciones entre 60 y 80.
+Vamos a colorear de otra forma para que quede ilustrado de una mejor manera.
+
+```{r}
+#| echo: false
+#| message: false
+#| warning: false
+#| fig-align: center
+scores_pca <- as.data.frame(pca_modelo$x)
+scores_pca <- scores_pca %>%
+  bind_cols(exam_score = df$exam_score) %>%
+  mutate(exam_score_cuantil = cut(exam_score,
+                                   breaks = quantile(exam_score, probs = seq(0, 1, 1/3)),
+                                   include.lowest = TRUE,
+                                   labels = c("Bajo", "Medio", "Alto")))
+
+ggplot(scores_pca, aes(x = PC1, y = PC2, color = exam_score_cuantil)) +
+  geom_point(size = 2.5, alpha = 0.7) +
+  scale_color_manual(
+    values = c("#DC143C", "#FFD700", "#2E8B57"),
+    name = "Cuantil de Calificación"
+  ) +
+  labs(x = paste0("PC1: ", round(varianza_explicada[2, 1] * 100, 2), "%"),
+       y = paste0("PC2: ", round(varianza_explicada[2, 2] * 100, 2), "%"),
+       title = "Componentes Principales - Estudiantes por Cuantil de Calificación") +
+  theme_minimal() +
+  theme(plot.title = element_text(color = "#2E8B57", face = "bold", size = 7))
+```
+Si bien, ayuda a visualizar que los estudiantes se agrupan por color (calificación baja arriba, alta abajo, etc) no se agrupan de una manera suficientemente tajante a comparación de los ejemplos que vimos en clase.
+Veamos la correlación entre las componentes y el resultado de examen.
+
+```{r}
+#| echo: false
+#| message: false
+#| warning: false
+#| fig-align: center
+#| results: hide
+
+
+correlaciones_pca <- scores_pca %>%
+  summarise(
+    PC1 = cor(PC1, exam_score),
+    PC2 = cor(PC2, exam_score),
+    PC3 = cor(PC3, exam_score),
+    PC4 = cor(PC4, exam_score),
+    PC5 = cor(PC5, exam_score)
+  ) %>%
+  pivot_longer(everything(), names_to = "Componente", values_to = "Correlación")
+
+print("Correlación entre componentes y calificación:")
+print(correlaciones_pca)
+
+ggplot(correlaciones_pca, aes(x = Componente, y = Correlación, fill = Componente)) +
+  geom_col() +
+  scale_fill_manual(values = c("#2E8B57", "#FFD700", "#4682B4", "#FF8C00", "#8B4513")) +
+  labs(title = "Correlación entre Componentes Principales y Calificación",
+       y = "Coeficiente de Correlación") +
+  theme_minimal() +
+  theme(plot.title = element_text(color = "#2E8B57", face = "bold", size = 6),
+        legend.position = "none")
+```
+Y ahora las cargas de las componentes.
+
+```{r}
+#| echo: false
+#| message: false
+#| warning: false
+#| fig-align: center
+cargas <- as.data.frame(pca_modelo$rotation)
+
+cargas_importantes <- cargas %>%
+  select(PC1, PC2, PC3) %>%
+  rownames_to_column("Variable") %>%
+  pivot_longer(cols = c(PC1, PC2, PC3), names_to = "Componente", values_to = "Carga")
+
+ggplot(cargas_importantes, aes(x = Componente, y = Variable, fill = Carga)) +
+  geom_tile() +
+  scale_fill_gradient2(
+    low = "#DC143C",
+    mid = "#FFFFFF",
+    high = "#2E8B57",
+    midpoint = 0,
+    name = "Carga"
+  ) +
+  labs(title = "Mapa de Calor - Contribución de Variables a Componentes") +
+  theme_minimal() +
+  theme(plot.title = element_text(color = "#2E8B57", face = "bold", size = 6),
+        axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+
+
+```{r}
+
+#| echo: false
+#| message: false
+#| warning: false
+#| fig-align: center
+#| fig-height: 10
+#| fig-width: 18
+
+cargas_top <- cargas_importantes %>%
+  group_by(Componente) %>%
+  slice_max(abs(Carga), n = 5) %>%
+  ungroup()
+
+ggplot(cargas_top, aes(x = reorder(Variable, Carga), y = Carga, fill = Componente)) +
+  geom_col() +
+  facet_wrap(vars(Componente), scales = "free_y") +
+  coord_flip() +
+  scale_fill_manual(values = c("#2E8B57", "#FFD700", "#4682B4")) +
+  labs(x = "Variable",
+       y = "Carga",
+       title = "Top 5 Variables que Contribuyen a Cada Componente") +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(color = "#2E8B57", face = "bold", size = 5),
+    legend.position = "none",
+    axis.text.y = element_text(size = 3), 
+    axis.text.x = element_text(size = 3),
+    strip.text = element_text(size = 4, face = "bold"),
+    axis.title = element_text(size = 4)
+  )
+```
+
+Estos primeros resultados parecen indicar que si excluimos `exam_score` de nuestro dataset, tenemos dificultades con notar agrupaciones claras respecto a las calificaciones.
+
+
+
+
+\subsection{t-SNE}
+\label{t-SNE}
+
+
+
+Ahora pasaremos al metodo t-SNE
+
+
+
+```{r}
+#| echo: false
+#| message: false
+#| warning: false
+#| fig-align: center
+# library(learnr)
+library(tidyverse)
+library(tidymodels)
+library(embed)
+library(corrr)
+library(tidytext)
+library(gradethis)
+library(sortable)
+library(learntidymodels)
+library(rstatix)
+library(broom)
+library(rgl)
+library(plotly)
+library(GGally)
+library(tidyr)
+library(FactoMineR)  
+library(factoextra)
+library(ggord)
+library(modeldata) 
+library(tsne)  
+library(uwot)  
+library(scattermore)  
+library(readr)  
+library(Rtsne)  
+library(gganimate)  
+library(data.table)  
+library(baguette)
+library(discrim)
+theme_set(theme_bw(16))
+
+tidymodels_prefer()
+df<-read.csv("/home/yamorza/Documentos/espacio_trabajo_intro_analisis_dat2/proyecto_modulo_6/src/habits.csv")
+
+```
+
+
+
+```{r}
+#| echo: false
+#| message: false
+#| warning: false
+#| fig-align: center
+df_sin_categoricas <- df #%>% select(-exam_score)
+```
+
+```{r}
+#| echo: false
+#| message: false
+#| warning: false
+#| fig-align: center
+library(dplyr)
+
+df_encoded <- df %>%
+  mutate(
+    # Binary: Male = 0, Female = 1
+    part_time_job = ifelse(part_time_job== "No",1,0),
+    extracurricular_participation = ifelse(extracurricular_participation== "Yes",1,0),
+
+    gender = ifelse(gender == "Male", 0, 1),
+    
+    # Ordinal: poor = 0, average = 1, good = 2
+    internet_quality = case_when(
+      internet_quality == "Poor" ~ 0,
+      internet_quality == "Average" ~ 1,
+      internet_quality == "Good" ~ 2
+    ),
+    
+    # Same ordinal encoding
+    diet_quality = case_when(
+      diet_quality == "Poor" ~ 0,
+      diet_quality == "Fair" ~ 1,
+      diet_quality == "Good" ~ 2
+    ),
+    
+    # Ordinal: None = 0, High School = 1, Bachelor = 2, Master = 3
+    parental_education_level = case_when(
+      parental_education_level == "None" ~ 0,
+      parental_education_level == "High School" ~ 1,
+      parental_education_level == "Bachelor" ~ 2,
+      parental_education_level == "Master" ~ 3
+    )
+  )
+```
+
+Al ejecutar el siguiente bloque de código ya habríamos de haber codificado el dataset como lo hicimos en el paso anterior.
+
+```{r}
+#| echo: True
+#| message: false
+#| warning: false
+#| results: hide
+#| fig-align: center
+
+
+set.seed(123)
+
+start.time <- proc.time()
+
+df_tsne <- df_encoded %>%
+  scale() %>%
+  tsne()
+
+proc.time()-start.time
+```
+
+```{r}
+#| echo: false
+#| message: false
+#| warning: false
+#| fig-align: center
+
+datos_tsne <- data.frame(
+  tSNE1 = df_tsne[,1],
+  tSNE2 = df_tsne[,2],
+  exam_score = df$exam_score  
+)
+
+datos_tsne_quantile <- datos_tsne %>%
+  mutate(exam_score_cuantil = cut(
+    exam_score,
+    breaks = quantile(exam_score, probs = seq(0, 1, 0.25), na.rm = TRUE),
+    include.lowest = TRUE,
+    labels = c("Bajo", "Medio-Bajo", "Medio-Alto", "Alto")
+  ))
+
+```
+Sin algun distintivo veremos que no existen grupos definidos cuando no declaramos hiperparametros
+```{r}
+#| echo: false
+#| message: false
+#| warning: false
+#| fig-align: center
+
+
+ggplot(datos_tsne, aes(x = tSNE1, y = tSNE2)) +
+  geom_point(size = 1.8, alpha = 0.7, color = "#2E8B57") +
+  labs(title = "t-SNE - Estudiantes por Hábitos") +
+  theme_minimal() +
+  theme(plot.title = element_text(color = "#2E8B57", face = "bold", size = 7),
+        axis.title = element_text(color = "#4682B4", size = 5.5),
+        axis.text = element_text(color = "#8B4513", size = 4.5))
+```
+
+Parece existir una aglomeración en la esquina superior derecha.
+
+```{r}
+#| echo: false
+#| message: false
+#| warning: false
+#| fig-align: center
+
+ggplot(datos_tsne_quantile, aes(x = tSNE1, y = tSNE2, color = exam_score)) +
+  geom_point(size = 1.8, alpha = 0.7) +
+  scale_color_gradient2(
+    low = "#DC143C",
+    mid = "#FFD700",
+    high = "#2E8B57",
+    midpoint = 70,
+    name = "Calificación"
+  ) +
+  labs(title = "t-SNE - Estudiantes por Calificación Continua") +
+  theme_minimal() +
+  theme(plot.title = element_text(color = "#2E8B57", face = "bold", size = 14),
+        axis.title = element_text(color = "#4682B4", size = 11),
+        axis.text = element_text(color = "#8B4513", size = 9),
+        legend.title = element_text(color = "#2E8B57", face = "bold", size = 10))
+```
+Pero al intentar colorear por califación, parece que no se agrupan de esta manera.
+
+```{r}
+datos_tsne_3grupos <- datos_tsne %>%
+  mutate(exam_score_grupo = case_when(
+    exam_score >= 80 ~ "Alto",
+    exam_score >= 60 ~ "Medio",
+    exam_score < 60 ~ "Bajo"
+  ))
+
+ggplot(datos_tsne_3grupos, aes(x = tSNE1, y = tSNE2, color = exam_score_grupo)) +
+  geom_point(size = 1.8, alpha = 0.7) +
+  scale_color_manual(
+    values = c("Alto" = "#2E8B57", "Medio" = "#FFD700", "Bajo" = "#DC143C"),
+    name = "Grupo de Calificación"
+  ) +
+  labs(title = "t-SNE - Estudiantes por Grupo de Calificación") +
+  theme_minimal() +
+  theme(plot.title = element_text(color = "#2E8B57", face = "bold", size = 7),
+        axis.title = element_text(color = "#4682B4", size = 5.5),
+        axis.text = element_text(color = "#8B4513", size = 4.5),
+        legend.title = element_text(color = "#2E8B57", face = "bold", size = 5),
+        legend.position = "bottom")
+```
+
+En este caso tsne no muestra una separacion tan evidente como en el caso de pca, aunque si se puede notar un degradado, debemos recordar que aun no establecemos ningun hiperparametro
+
+```{r}
+#| echo: false
+#| message: false
+#| warning: false
+#| fig-align: center
+
+datos_tsne_3grupos <- datos_tsne %>%
+  mutate(exam_score_grupo = case_when(
+    exam_score >= 80 ~ "Alto",
+    exam_score >= 60 ~ "Medio",
+    exam_score < 60 ~ "Bajo"
+  ))
+
+p1 <- ggplot(datos_tsne_3grupos,
+       aes(x = exam_score_grupo, y = tSNE1, fill = exam_score_grupo)) +
+  geom_boxplot(alpha = 0.8) +
+  scale_fill_manual(
+    values = c("Alto" = "#2E8B57", 
+               "Medio" = "#FFD700", 
+               "Bajo" = "#DC143C")
+  ) +
+  labs(
+    title = "tSNE1 por Grupo de Calificación",
+    x = "Grupo de Calificación",
+    y = "tSNE1"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(color = "#2E8B57", face = "bold", size = 7),
+    axis.title = element_text(color = "#4682B4", size = 8),
+    axis.text = element_text(color = "#8B4513", size = 7),
+    legend.position = "none"
+  )
+
+p2 <- ggplot(datos_tsne_3grupos,
+       aes(x = exam_score_grupo, y = tSNE2, fill = exam_score_grupo)) +
+  geom_boxplot(alpha = 0.8) +
+  scale_fill_manual(
+    values = c("Alto" = "#2E8B57", 
+               "Medio" = "#FFD700", 
+               "Bajo" = "#DC143C")
+  ) +
+  labs(
+    title = "tSNE2 por Grupo de Calificación",
+    x = "Grupo de Calificación",
+    y = "tSNE2"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(color = "#2E8B57", face = "bold", size = 7),
+    axis.title = element_text(color = "#4682B4", size = 8),
+    axis.text = element_text(color = "#8B4513", size = 7),
+    legend.position = "none"
+  )
+
+library(patchwork)
+p1 + p2 +
+  plot_annotation(
+    title = "Distribución de tSNE por Grupo de Calificación",
+    theme = theme(
+      plot.title = element_text(color = "#2E8B57", face = "bold", size = 12, hjust = 0.5)
+    )
+  )
+
+```
+Veremos que existen ligeros traslapes entre el como tsne hace una diferencia en los grupos, aunque se puede notar que es significativa, puede indicar que puede ser mejor que pca
+
+
+```{r}
+#| echo: false
+#| message: false
+#| warning: false
+#| fig-align: center
+
+
+datos_tsne_3grupos <- datos_tsne %>%
+  mutate(exam_score_grupo = case_when(
+    exam_score >= 80 ~ "Alto",
+    exam_score >= 60 ~ "Medio",
+    exam_score < 60 ~ "Bajo"
+  ))
+
+ggplot(datos_tsne_3grupos, aes(x = tSNE1, y = tSNE2, color = exam_score_grupo)) +
+  geom_point(size = 1.8, alpha = 0.7) +
+  scale_color_manual(
+    values = c("Alto" = "#2E8B57", 
+               "Medio" = "#FFD700", 
+               "Bajo" = "#DC143C"),
+    name = "Grupo de Calificación"
+  ) +
+  labs(
+    title = "t-SNE - Estudiantes por Grupo de Calificación",
+    x = "tSNE Dimensión 1",
+    y = "tSNE Dimensión 2"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(color = "#2E8B57", face = "bold", size = 13),
+    axis.title = element_text(color = "#4682B4", size = 12),
+    axis.text = element_text(color = "#8B4513", size = 10),
+    legend.title = element_text(color = "#2E8B57", face = "bold", size = 11),
+    legend.position = "bottom"
+  )
+```
+
+Esta gráfica muestra de forma un poco más clara nuestra separacion entre grupos sin allterar demasiado las dimensiones del grafico
+
+Debemos recordar que este algoritmo uso la primera version de tsne ahora pasaremos a demostrar el poderio de la libreria de rtsne
+
+```{r}
+#| echo: false
+#| message: false
+#| warning: false
+#| fig-align: center
+#| results: hide
+
+set.seed(123)
+
+start.time <- proc.time()
+
+df_Rtsne <- df_encoded %>%
+  scale() %>%
+  Rtsne() 
+
+proc.time()-start.time
+```
+
+```{r}
+#| echo: false
+#| message: false
+#| warning: false
+#| fig-align: center
+datos_Rtsne <- data.frame(
+  Rtsne1 = df_Rtsne$Y[,1],
+  Rtsne2 = df_Rtsne$Y[,2],
+  exam_score = df$exam_score
+)
+
+datos_Rtsne_3grupos <- datos_Rtsne %>%
+  mutate(exam_score_grupo = case_when(
+    exam_score >= 80 ~ "Alto",
+    exam_score >= 60 ~ "Medio",
+    exam_score < 60 ~ "Bajo"
+  ))
+
+datos_Rtsne_quantile <- datos_Rtsne %>%
+  mutate(exam_score = cut(
+    exam_score,
+    breaks = quantile(exam_score, probs = seq(0, 1, 1/3), na.rm = TRUE),
+    include.lowest = TRUE,
+    labels = c("Bajo", "Medio", "Alto")
+  ))
+
+```
+
+```{r}
+#| echo: false
+#| message: false
+#| results: hide
+#| warning: false
+#| fig-align: center
+
+
+
+ggplot(datos_Rtsne_quantile,aes(x=Rtsne1,y=Rtsne2))+
+geom_point(size=1.1,color="darkred")+
+labs(title="WDBC: Rtsne")
+```
+En este caso, podemos notar una agrupación en la izquierda.
+
+```{r}
+#| echo: false
+#| message: false
+#| warning: false
+#| fig-align: center
+ggplot(datos_Rtsne_quantile, aes(x = Rtsne1, y = Rtsne2, color = exam_score)) +
+  geom_point(size = 1.8, alpha = 0.7) +
+  scale_color_manual(
+    values = c("Bajo" = "#DC143C", "Medio" = "#FFD700", "Alto" = "#2E8B57"),
+    name = "Cuantil de Calificación"
+  ) +
+  labs(title = "Rtsne - Estudiantes por Cuantil de Calificación") +
+  theme_minimal() +
+  theme(plot.title = element_text(color = "#2E8B57", face = "bold", size = 10),
+        axis.title = element_text(color = "#4682B4", size = 11),
+        axis.text = element_text(color = "#8B4513", size = 9),
+        legend.title = element_text(color = "#2E8B57", face = "bold", size = 10),
+        legend.position = "bottom")
+```
+Pero parece no estar agrupada por califcación. 
+Veremos que gracias a esta libreria la dispersion entre nuestros grupos y los datos en general es mejor, demostrando un mejor uso de la reduccion de dimension para explicar la varianza de nuestros datos
+
+```{r}
+#| echo: false
+#| message: false
+#| warning: false
+#| fig-align: center
+library(patchwork)
+
+datos_Rtsne_3grupos <- datos_Rtsne %>%
+  mutate(exam_score_grupo = factor(
+    case_when(
+      exam_score >= 80 ~ "Alto",
+      exam_score >= 60 ~ "Medio",
+      exam_score < 60 ~ "Bajo"
+    ),
+    levels = c("Alto", "Medio", "Bajo")
+  ))
+
+p1 <- ggplot(datos_Rtsne_3grupos,
+             aes(x = exam_score_grupo, y = Rtsne1, fill = exam_score_grupo)) +
+  geom_boxplot(alpha = 0.8) +
+  scale_fill_manual(
+    values = c("Alto" = "#2E8B57", 
+               "Medio" = "#FFD700", 
+               "Bajo" = "#DC143C")
+  ) +
+  labs(
+    title = "Rtsne1 por Grupo",
+    x = "Grupo de Calificación",
+    y = "Rtsne1"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(color = "#2E8B57", face = "bold", size = 12),
+    axis.title = element_text(color = "#4682B4", size = 10),
+    axis.text = element_text(color = "#8B4513", size = 9),
+    legend.position = "none"
+  )
+
+p2 <- ggplot(datos_Rtsne_3grupos,
+             aes(x = exam_score_grupo, y = Rtsne2, fill = exam_score_grupo)) +
+  geom_boxplot(alpha = 0.8) +
+  scale_fill_manual(
+    values = c("Alto" = "#2E8B57", 
+               "Medio" = "#FFD700", 
+               "Bajo" = "#DC143C")
+  ) +
+  labs(
+    title = "Rtsne2 por Grupo",
+    x = "Grupo de Calificación",
+    y = "Rtsne2"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(color = "#2E8B57", face = "bold", size = 12),
+    axis.title = element_text(color = "#4682B4", size = 10),
+    axis.text = element_text(color = "#8B4513", size = 9),
+    legend.position = "none"
+  )
+
+p1 + p2 +
+  plot_annotation(
+    title = "Distribución de Dimensiones Rtsne por Grupo de Calificación",
+    theme = theme(
+      plot.title = element_text(color = "#2E8B57", face = "bold", size = 10, hjust = 0.5)
+    )
+  )
+```
+
+En este caso nuestro algoritmo nos da un traslape entre nuestros grupos ligeramente menos eficientes para los grupos intermedios, aunque para los extremos sigue siendo eficiente para los grupos de los extremos
+
+```{r}
+#| echo: false
+#| message: false
+#| warning: false
+#| fig-align: center
+datos_Rtsne_3grupos <- datos_Rtsne %>%
+  mutate(exam_score_grupo = case_when(
+    exam_score >= 80 ~ "Alto",
+    exam_score >= 60 ~ "Medio",
+    exam_score < 60 ~ "Bajo"
+  ))
+
+colors_3 <- c(
+  "Alto" = "#2E8B57",
+  "Medio" = "#FFD700",
+  "Bajo" = "#DC143C"
+)
+
+ggplot(datos_Rtsne_3grupos, aes(x = Rtsne1, y = Rtsne2, color = exam_score_grupo)) +
+  geom_point(size = 1.8, alpha = 0.7) +
+  scale_color_manual(values = colors_3, name = "Grupo de Calificación") +
+  labs(
+    title = "Rtsne - Estudiantes por Grupo de Calificación",
+    x = "Rtsne Dimensión 1",
+    y = "Rtsne Dimensión 2"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(color = "#2E8B57", face = "bold", size = 10),
+    axis.title = element_text(color = "#4682B4", size = 12),
+    axis.text = element_text(color = "#8B4513", size = 10),
+    legend.title = element_text(color = "#2E8B57", face = "bold", size = 11),
+    legend.position = "bottom"
+  )
+```
+Esta grafica es un poco mas visible
+
+
+
+
+```{r}
+#| echo: false
+#| message: false
+#| warning: false
+#| fig-align: center
+#| output: false
+
+set.seed(123)
+
+tsne_params <-  expand.grid(perplexity=c(10,15,20,25,30,50)) ###Explorando parametro de perplejidad: perplexity. max_iter fijo 
+
+set.seed(123)
+
+start.time <- proc.time()
+
+df_sin_exam_score <- df_encoded %>%
+  select(-exam_score)
+
+
+tsne_res <- lapply(seq(nrow(tsne_params)), function(i) {
+	print(i)
+	res <- tsne::tsne(
+		X = df_sin_exam_score,
+            max_iter = 500,
+		perplexity = tsne_params[[1]][i]
+		
+	)
+	
+	return(res)
+})
+
+proc.time()-start.time  ###Esto tardó en mi compu: 332.33 segundos
+
+
+library(data.table)
+d1 <- rbindlist(lapply(seq(nrow(tsne_params)), function(i) {
+	data.table(
+		x = tsne_res[[i]][,1],
+		y = tsne_res[[i]][,2],
+		perplexity = tsne_params[[1]][i],
+		exam_score = df$exam_score
+	)
+}))
+```
+
+
+
+```{r}
+#| echo: false
+#| message: false
+#| warning: false
+#| fig-align: center
+#| output: false
+#| fig-height: 10
+#| fig-width: 18
+
+
+
+d1 <- d1 %>%
+  mutate(group = case_when(
+    exam_score >= 80 ~ "Alto",
+    exam_score >= 60 ~ "Medio",
+    exam_score < 60 ~ "Bajo"
+  )) %>%
+  mutate(group = factor(group, levels = c("Alto", "Medio", "Bajo")))
+
+# Graficar
+p1 <- ggplot(d1) +
+  geom_scattermore(
+    mapping = aes(x = x, y = y, colour = group),
+    pointsize = 3
+  ) +
+  scale_color_manual(
+    values = c("Alto" = "#2E8B57", 
+               "Medio" = "#FFD700", 
+               "Bajo" = "#DC143C"),
+    name = "Grupo de Calificación"
+  ) +
+  theme(
+    axis.text = element_blank(),
+    axis.ticks = element_blank(),
+    axis.title = element_blank(),
+    legend.position = "bottom"
+  ) +
+  facet_wrap(~perplexity, 
+             labeller = label_both,
+             scales = "free") +
+  theme_minimal() +
+  theme(
+    legend.position = "bottom",
+    strip.text = element_text(color = "#2E8B57", face = "bold", size = 12),
+    legend.title = element_text(color = "#2E8B57", face = "bold", size = 10)
+  )
+
+```
+
+
+```{r}
+p1
+```
+
+```{r}
+#| echo: false
+#| message: false
+#| warning: false
+#| fig-align: center
+#| output: false
+set.seed(123)
+
+start.time <- proc.time()
+
+Rtsne_params <- expand.grid(perplexity = c(10, 15, 20, 25, 30, 50))
+
+Rtsne_res <- lapply(seq(nrow(Rtsne_params)), function(i) {
+  print(i)
+  Rres <- Rtsne::Rtsne(
+    X = df_sin_exam_score,
+    max_iter = 500,
+    verbose = TRUE,
+    perplexity = Rtsne_params$perplexity[i],
+    check_duplicates = FALSE
+  )
+  return(Rres)
+})
+
+proc.time() - start.time
+
+d2 <- rbindlist(lapply(seq(nrow(Rtsne_params)), function(i) {
+  data.table(
+    x = Rtsne_res[[i]]$Y[,1],
+    y = Rtsne_res[[i]]$Y[,2],
+    perplexity = Rtsne_params$perplexity[i],
+    exam_score = df$exam_score
+  )
+}))
+
+d2 <- d2 %>%
+  mutate(group = case_when(
+    exam_score >= 80 ~ "Alto",
+    exam_score >= 60 ~ "Medio",
+    exam_score < 60 ~ "Bajo"
+  )) %>%
+  mutate(group = factor(group, levels = c("Alto", "Medio", "Bajo")))
+
+p2 <- ggplot(d2) +
+  geom_scattermore(
+    mapping = aes(x = x, y = y, colour = group),
+    pointsize = 5
+  ) +
+  scale_color_manual(
+    values = c("Alto" = "#2E8B57", 
+               "Medio" = "#FFD700", 
+               "Bajo" = "#DC143C"),
+    name = "Grupo de Calificación"
+  ) +
+  theme(
+    axis.text = element_blank(),
+    axis.ticks = element_blank(),
+    axis.title = element_blank(),
+    legend.position = "bottom"
+  ) +
+  facet_wrap(~perplexity, 
+             labeller = label_both,
+             scales = "free") +
+  theme_minimal() +
+  theme(
+    legend.position = "bottom",
+    strip.text = element_text(color = "#2E8B57", face = "bold", size = 12),
+    legend.title = element_text(color = "#2E8B57", face = "bold", size = 10)
+  ) +
+  labs(title = "Rtsne - Comparación de Perplejidad")
+
+```
+
+```{r}
+#| fig-height: 10
+#| fig-width: 18
+
+print(p2)
+```
+
+
+
+```{r}
+#| echo: false
+#| message: false
+#| warning: false
+#| fig-align: center
+#| output: false
+set.seed(123)
+Rtsne_params2 <- expand.grid(perplexity = c(10, 15, 20, 25, 30), eta = c(10, 50, 100, 150))
+
+Rtsne_res2 <- lapply(seq(nrow(Rtsne_params2)), function(i) {
+  Rres <- Rtsne(
+    X = df_encoded,
+    max_iter = 500,
+    verbose = TRUE,
+    perplexity = Rtsne_params2$perplexity[i],
+    check_duplicates = FALSE,
+    eta = Rtsne_params2$eta[i],
+    pca = FALSE
+  )
+  return(Rres)
+})
+
+d3 <- rbindlist(lapply(seq(nrow(Rtsne_params2)), function(i) {
+  data.table(
+    x = Rtsne_res2[[i]]$Y[,1],
+    y = Rtsne_res2[[i]]$Y[,2],
+    perplexity = Rtsne_params2$perplexity[i],
+    eta = Rtsne_params2$eta[i],
+    exam_score = df$exam_score
+  )
+}))
+
+d3 <- d3 %>%
+  mutate(group = case_when(
+    exam_score >= 80 ~ "Alto",
+    exam_score >= 60 ~ "Medio",
+    exam_score < 60 ~ "Bajo"
+  )) %>%
+  mutate(group = factor(group, levels = c("Alto", "Medio", "Bajo")))
+
+p3 <- ggplot(d3) +
+  geom_scattermore(
+    mapping = aes(x = x, y = y, colour = group),
+    pointsize = 5
+  ) +
+  scale_color_manual(
+    values = c("Alto" = "#2E8B57", 
+               "Medio" = "#FFD700", 
+               "Bajo" = "#DC143C"),
+    name = "Grupo de Calificación"
+  ) +
+  theme(
+    axis.text = element_blank(),
+    axis.ticks = element_blank(),
+    axis.title = element_blank(),
+    legend.position = "bottom"
+  ) +
+  facet_wrap(eta ~ perplexity,
+             labeller = label_both,
+             scales = "free",
+             ncol = 5) +
+  theme_minimal() +
+  theme(
+    legend.position = "bottom",
+    strip.text = element_text(color = "#2E8B57", face = "bold", size = 9),
+    legend.title = element_text(color = "#2E8B57", face = "bold", size = 10),
+    plot.title = element_text(color = "#2E8B57", face = "bold", size = 16, hjust = 0.5)
+  ) +
+  labs(title = "Rtsne - Comparación de Perplejidad y Eta (Tasa de Aprendizaje)")
+```
+
+```{r}
+#| fig-height: 10
+#| fig-width: 18
+print(p3)
+
+```
+
+
+
+Conclusión, a pesar de que algunos gráficos muestran una separación prometedora, esta parece no responder a alguna variable como `exam_score`, notamos este patrón con otras columnas también, como lo son `mental_health_rating` . Podrán existir muchas explicaciones respecto a esto, una de ellas podría ser que tener buenos hábitos no necesariamente se refleja en las calificaciones de un determinado estudiante (un estudiante con buenas notas podría tener alguna adicción a las redes sociales, o bien un estudiante con malas notas podría tener buenos hábitos). Claro, esta conclusión depende estrictamente del dataset que estamos trabajando. 
+
+
+
+\subsection{UMAP}
+\label{UMAP}
+
+Vamos a hacerle la misma modificación al dataset con respecto a las variables categóricas. Después de esta moidifcación tenemos:
+
+```{r}
+#| echo: false
+#| message: false
+#| warning: false
+#| fig-align: center
+#| output: false
+library(tidyverse)
+library(tidymodels)
+library(modeldata)
+library(embed)
+library(tsne)
+library(uwot)
+library(scattermore)
+library(readr)
+library(Rtsne)
+library(baguette)
+library(discrim)
+library(gganimate)
+library(data.table)
+library(plotly)
+tidymodels_prefer()
+
+df<-read.csv("/home/yamorza/Documentos/espacio_trabajo_intro_analisis_dat2/proyecto_modulo_6/src/habits.csv")
+
+df %>% dim()
+
+df %>% glimpse()
+
+df %>% head()
+```
+
+
+```{r}
+#| echo: false
+#| message: false
+#| warning: false
+#| fig-align: center
+library(dplyr)
+
+df_encoded <- df %>%
+  mutate(
+    # Binary: Male = 0, Female = 1
+    part_time_job = ifelse(part_time_job== "No",1,0),
+    extracurricular_participation = ifelse(extracurricular_participation== "Yes",1,0),
+
+    gender = ifelse(gender == "Male", 0, 1),
+    
+    # Ordinal: poor = 0, average = 1, good = 2
+    internet_quality = case_when(
+      internet_quality == "Poor" ~ 0,
+      internet_quality == "Average" ~ 1,
+      internet_quality == "Good" ~ 2
+    ),
+    
+    # Same ordinal encoding
+    diet_quality = case_when(
+      diet_quality == "Poor" ~ 0,
+      diet_quality == "Fair" ~ 1,
+      diet_quality == "Good" ~ 2
+    ),
+    
+    # Ordinal: None = 0, High School = 1, Bachelor = 2, Master = 3
+    parental_education_level = case_when(
+      parental_education_level == "None" ~ 0,
+      parental_education_level == "High School" ~ 1,
+      parental_education_level == "Bachelor" ~ 2,
+      parental_education_level == "Master" ~ 3
+    )
+  )
+```
+
+
+```{r}
+#| echo: false
+#| message: false
+#| warning: false
+#| fig-align: center
+df_para_umap<- df_encoded %>% select(-c(exam_score))
+
+
+df_umap <- df_para_umap %>%
+  dplyr::select(where(is.numeric)) %>%
+  scale() %>%
+  uwot::umap()
+```
+
+
+```{r}
+#| echo: false
+#| message: false
+#| warning: false
+#| fig-align: center
+
+
+datos <- data.frame(
+  UMAP1 = df_umap[,1],
+  UMAP2 = df_umap[,2],
+  diagnostico = df$exam_score
+)
+
+
+
+
+
+ggplot(datos, aes(x = UMAP1, y = UMAP2)) +
+  geom_point(size = 1.8, alpha = 0.7, color = "#2E8B57") +
+  labs(
+    title = "UMAP - Estudiantes por Hábitos",
+    x = "UMAP Dimensión 1",
+    y = "UMAP Dimensión 2"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(color = "#2E8B57", face = "bold", size = 14),
+    axis.title = element_text(color = "#4682B4", size = 11),
+    axis.text = element_text(color = "#8B4513", size = 9)
+  )
+```
+
+UMAP sí logra generar grupos, esto tiene sentido dado que UMAP genera grupos basado en vecinos cercanos. Pero, habremos de tener cuidado con saltar a conclusiones, dado que UMAP puede generar grupos artificiales, aunque no existiese una estructura como tal. Por ejemplo, a continuación coloreamos por grupos basados en `exam_score`
+
+```{r}
+
+#| echo: false
+#| message: false
+#| warning: false
+#| fig-align: center
+
+datos <- data.frame(
+  UMAP1 = df_umap[,1],
+  UMAP2 = df_umap[,2],
+  diagnostico = df$exam_score
+)
+
+datos <- datos %>%
+  mutate(group = case_when(
+    diagnostico >= 80 ~ "Alto",
+    diagnostico >= 60 ~ "Medio",
+    diagnostico < 60 ~ "Bajo"
+  )) %>%
+  mutate(group = factor(group, levels = c("Alto", "Medio", "Bajo")))
+ggplot(datos, aes(x = UMAP1, y = UMAP2, color = group)) +
+  geom_point(size = 1.8, alpha = 0.7) +
+  scale_color_manual(
+    values = c("Alto" = "#2E8B57", 
+               "Medio" = "#FFD700", 
+               "Bajo" = "#DC143C"),
+    name = "Grupo de Calificación"
+  ) +
+  labs(
+    title = "UMAP - Estudiantes por Grupo de Calificación",
+    x = "UMAP Dimensión 1",
+    y = "UMAP Dimensión 2"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(color = "#2E8B57", face = "bold", size = 7),
+    axis.title = element_text(color = "#4682B4", size = 5.5),
+    axis.text = element_text(color = "#8B4513", size = 4.5),
+    legend.title = element_text(color = "#2E8B57", face = "bold", size = 5),
+    legend.position = "bottom"
+  )
+```
+
+Y aquí por `attendance_percentage`:
+
+```{r}
+
+#| echo: false
+#| message: false
+#| warning: false
+#| fig-align: center
+
+datos <- data.frame(
+  UMAP1 = df_umap[,1],
+  UMAP2 = df_umap[,2],
+  diagnostico = df$attendance_percentage
+)
+
+# Crear 3 grupos con cuantiles (cada grupo tiene ~33% de los datos)
+datos <- datos %>%
+  mutate(group = cut(diagnostico,
+                     breaks = quantile(diagnostico, probs = c(0, 1/3, 2/3, 1)),
+                     include.lowest = TRUE,
+                     labels = c("Bajo", "Medio", "Alto"))) %>%
+  mutate(group = factor(group, levels = c("Alto", "Medio", "Bajo")))
+
+ggplot(datos, aes(x = UMAP1, y = UMAP2, color = group)) +
+  geom_point(size = 1.8, alpha = 0.7) +
+  scale_color_manual(
+    values = c("Alto" = "#2E8B57", 
+               "Medio" = "#FFD700", 
+               "Bajo" = "#DC143C"),
+    name = "Grupo de Asistencia"
+  ) +
+  labs(
+    title = "UMAP - Estudiantes por Cuantil de Asistencia",
+    subtitle = "Cada grupo contiene ~33% de los estudiantes",
+    x = "UMAP Dimensión 1",
+    y = "UMAP Dimensión 2"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(color = "#2E8B57", face = "bold", size = 6),
+    plot.subtitle = element_text(color = "#4682B4", size = 4.5),
+    axis.title = element_text(color = "#4682B4", size = 5),
+    axis.text = element_text(color = "#8B4513", size = 4),
+    legend.title = element_text(color = "#2E8B57", face = "bold", size = 4.5),
+    legend.position = "bottom"
+  )
+```
+
+
+
+
+
+
+```{r}
+#| echo: false
+#| message: false
+#| warning: false
+#| fig-align: center
+umap_rec <- recipe(~., data = df_encoded) %>%
+  update_role(exam_score, new_role = "id") %>%
+  step_normalize(all_predictors()) %>%
+  step_umap(all_predictors())
+
+umap_res <- prep(umap_rec)
+
+umap_res
+
+datos_umap <- juice(umap_res) %>%
+  mutate(group = case_when(
+    exam_score >= 80 ~ "Alto",
+    exam_score >= 60 ~ "Medio",
+    exam_score < 60 ~ "Bajo"
+  )) %>%
+  mutate(group = factor(group, levels = c("Alto", "Medio", "Bajo")))
+
+ggplot(datos_umap, aes(x = UMAP1, y = UMAP2)) +
+  geom_point(size = 1.8, alpha = 0.7, color = "#2E8B57") +
+  labs(
+    title = "UMAP - Estudiantes por Hábitos",
+    x = "UMAP Dimensión 1",
+    y = "UMAP Dimensión 2"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(color = "#2E8B57", face = "bold", size = 14),
+    axis.title = element_text(color = "#4682B4", size = 11),
+    axis.text = element_text(color = "#8B4513", size = 9)
+  )
+
+ggplot(datos_umap, aes(x = UMAP1, y = UMAP2, color = group)) +
+  geom_point(size = 1.8, alpha = 0.7) +
+  scale_color_manual(
+    values = c("Alto" = "#2E8B57", 
+               "Medio" = "#FFD700", 
+               "Bajo" = "#DC143C"),
+    name = "Grupo de Calificación"
+  ) +
+  labs(
+    title = "UMAP - Estudiantes por Grupo de Calificación",
+    x = "UMAP Dimensión 1",
+    y = "UMAP Dimensión 2"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(color = "#2E8B57", face = "bold", size = 14),
+    axis.title = element_text(color = "#4682B4", size = 11),
+    axis.text = element_text(color = "#8B4513", size = 9),
+    legend.title = element_text(color = "#2E8B57", face = "bold", size = 10),
+    legend.position = "bottom"
+  )
+
+```
+
+
+Comparemos los distintos parámetros con los que corremos UMAP:
+
+
+
+
+
+```{r}
+#| echo: false
+#| message: false
+#| warning: false
+#| fig-width: 14
+#| fig-height: 12
+#| fig-align: center
+
+library(ggplot2)
+library(data.table)
+library(dplyr)
+library(uwot)
+
+umap_params <- expand.grid(
+  n_neighbors = c(5, 10, 20, 50, 100), 
+  min_dist = c(0.1, 0.5, 0.75, 1.1)
+)
+
+umaps <- lapply(seq(nrow(umap_params)), function(i) {
+  emb <- uwot::umap(
+    X = df_para_umap,
+    n_neighbors = umap_params$n_neighbors[i],
+    min_dist = umap_params$min_dist[i]
+  )
+  return(emb)
+})
+
+d <- rbindlist(lapply(seq(nrow(umap_params)), function(i) {
+  data.table(
+    x = umaps[[i]][,1],
+    y = umaps[[i]][,2],
+    n_neighbors = umap_params$n_neighbors[i],
+    min_dist = umap_params$min_dist[i],
+    exam_score = df$exam_score
+  )
+}))
+
+d <- d %>%
+  mutate(group = case_when(
+    exam_score >= 80 ~ "Alto",
+    exam_score >= 60 ~ "Medio",
+    exam_score < 60 ~ "Bajo"
+  )) %>%
+  mutate(group = factor(group, levels = c("Alto", "Medio", "Bajo")))
+
+d <- d %>%
+  mutate(
+    etiqueta = paste0("n=", n_neighbors, ", d=", min_dist)
+  )
+
+p <- ggplot(d) +
+  geom_scattermore(
+    mapping = aes(x = x, y = y, colour = group),
+    pointsize = 5  
+  ) +
+  scale_color_manual(
+    values = c("Alto" = "#2E8B57", 
+               "Medio" = "#FFD700", 
+               "Bajo" = "#DC143C"),
+    name = "Grupo de Calificación"
+  ) +
+  facet_wrap(
+    ~ etiqueta,
+    scales = "free",
+    ncol = 5  
+  ) +
+  labs(
+    title = "UMAP - Comparación de Parámetros",
+    subtitle = "Efecto de n_neighbors (5-100) y min_dist (0.1-1.1) en la visualización"
+  ) +
+  theme_minimal(base_size = 8) +
+  theme(
+    axis.text = element_blank(),
+    axis.ticks = element_blank(),
+    axis.title = element_blank(),
+    axis.line = element_blank(),
+    panel.grid = element_blank(),
+    panel.border = element_rect(color = "gray80", fill = NA, size = 0.3),
+    
+    legend.position = "bottom",
+    legend.title = element_text(color = "#2E8B57", face = "bold", size = 9),
+    legend.text = element_text(size = 8),
+    legend.key.size = unit(0.5, "cm"),
+    
+    strip.text = element_text(
+      color = "#2E8B57", 
+      face = "bold", 
+      size = 6  
+    ),
+    strip.background = element_rect(
+      fill = "gray95", 
+      color = "gray80",
+      size = 0.2
+    ),
+    
+    plot.title = element_text(
+      color = "#2E8B57", 
+      face = "bold", 
+      size = 13,
+      hjust = 0.5
+    ),
+    plot.subtitle = element_text(
+      color = "#4682B4", 
+      size = 10,
+      hjust = 0.5
+    ),
+    
+    plot.margin = margin(5, 5, 5, 5),
+    panel.spacing = unit(0.3, "lines")
+  )
+
+print(p)
+```
+
+```{r}
+#| echo: false
+#| message: false
+#| warning: false
+#| fig-width: 12
+#| fig-height: 10
+#| fig-align: center
+
+library(ggplot2)
+library(data.table)
+library(dplyr)
+library(uwot)
+
+umap_params1 <- expand.grid(
+  n_neighbors = c(5, 10, 15, 20), 
+  min_dist = c(0.5, 0.75, 1.1)
+)
+
+umaps1 <- lapply(seq(nrow(umap_params1)), function(i) {
+  emb <- uwot::umap(
+    X = df_para_umap,
+    n_neighbors = umap_params1$n_neighbors[i],
+    min_dist = umap_params1$min_dist[i]
+  )
+  return(emb)
+})
+
+d1 <- rbindlist(lapply(seq(nrow(umap_params1)), function(i) {
+  data.table(
+    x = umaps1[[i]][,1],
+    y = umaps1[[i]][,2],
+    n_neighbors = umap_params1$n_neighbors[i],
+    min_dist = umap_params1$min_dist[i],
+    exam_score = df$exam_score
+  )
+}))
+
+d1 <- d1 %>%
+  mutate(group = case_when(
+    exam_score >= 80 ~ "Alto",
+    exam_score >= 60 ~ "Medio",
+    exam_score < 60 ~ "Bajo"
+  )) %>%
+  mutate(group = factor(group, levels = c("Alto", "Medio", "Bajo")))
+
+p1 <- ggplot(d1) +
+  geom_scattermore(
+    mapping = aes(x = x, y = y, colour = group),
+    pointsize = 5  
+  ) +
+  scale_color_manual(
+    values = c("Alto" = "#2E8B57", 
+               "Medio" = "#FFD700", 
+               "Bajo" = "#DC143C"),
+    name = "Grupo de Calificación"
+  ) +
+  facet_wrap(
+    ~ paste0("min_dist = ", min_dist, ", n_neighbors = ", n_neighbors),
+    scales = "free",
+    ncol = 4  
+  ) +
+  labs(
+    title = "UMAP - Comparación de Parámetros",
+    subtitle = "Efecto de n_neighbors y min_dist en la visualización"
+  ) +
+  theme_minimal(base_size = 8) + 
+  theme(
+
+    axis.text = element_blank(),
+    axis.ticks = element_blank(),
+    axis.title = element_blank(),
+    axis.line = element_blank(),
+    panel.grid = element_blank(),
+    panel.border = element_rect(color = "gray80", fill = NA, size = 0.3),
+    
+
+    legend.position = "bottom",
+    legend.title = element_text(color = "#2E8B57", face = "bold", size = 8),
+    legend.text = element_text(size = 7),
+    legend.key.size = unit(0.4, "cm"),
+    
+   
+    strip.text = element_text(
+      color = "#2E8B57", 
+      face = "bold", 
+      size = 6  
+    ),
+    strip.background = element_rect(
+      fill = "gray95", 
+      color = "gray80",
+      size = 0.2
+    ),
+    
+ 
+    plot.title = element_text(
+      color = "#2E8B57", 
+      face = "bold", 
+      size = 12,
+      hjust = 0.5
+    ),
+    plot.subtitle = element_text(
+      color = "#4682B4", 
+      size = 9,
+      hjust = 0.5
+    ),
+    
+
+    plot.margin = margin(5, 5, 5, 5),
+    panel.spacing = unit(0.5, "lines")
+  )
+
+print(p1)
+
+
+
+
+
+```
+
+
+
+```{r}
+
+#| echo: false
+#| message: false
+#| warning: false
+#| fig-align: center
+
+Final_plot <- d1 %>% 
+  filter(min_dist == 0.5, n_neighbors == 15) %>% 
+  mutate(parametros = factor(paste('n_neighbors:', n_neighbors, 'min_dist:', min_dist))) %>% 
+  ggplot() +
+  geom_scattermore(
+    mapping = aes(x = x, y = y, colour = group),
+    pointsize = 6
+  ) +
+  scale_color_manual(
+    values = c("Alto" = "#2E8B57", 
+               "Medio" = "#FFD700", 
+               "Bajo" = "#DC143C"),
+    name = "Grupo de Calificación"
+  ) +
+  theme(
+    axis.text = element_blank(),
+    axis.ticks = element_blank(),
+    axis.title = element_blank(),
+    legend.position = "bottom"
+  ) +
+  theme_minimal() +
+  theme(
+    legend.position = "bottom",
+    plot.title = element_text(color = "#2E8B57", face = "bold", size = 8, hjust = 0.5),
+    legend.title = element_text(color = "#2E8B57", face = "bold", size = 5.5),
+    legend.text = element_text(size = 10)
+  ) +
+  labs(title = 'UMAP - Modelo Final (min_dist = 0.1, n_neighbors = 15)')
+
+print(Final_plot)
+
+
+
+```
+
+
+
+# Conclusión
+
+Usando los tres métodos , parece haber una fuerte indicación de que no podemos dividir a los estudiantes en categorías o grupos usando la información que tenemos.
+Lo que encontramos en el paso de análisis de datos es que hay poca correlación entre las variables, la más fuerte que hay con exam_score es la de horas de estudio. Pero las demás no tienen mucha relevancia. Si hay grupos, no son claros de observar. Esto, puede que tenga sentido intuitivo, pues un estudiante que saca buenas notas puede ser muy variado en su actuar, podría tener malos o buenos hábitos ya sea alimenticios o de consumo de redes sociales. 
+
+
+
+
+
+
+
+
